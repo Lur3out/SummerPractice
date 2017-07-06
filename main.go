@@ -30,6 +30,14 @@ func main() {
 	flag.Parse()
 
 	if *helpArg == true {
+		fmt.Print("----------------------------------------------------------------------------------------------")
 		fmt.Println("\nAllowed commands:")
+		fmt.Println("\nstart:\t\t\t\t\t\t//Запускает программу в режиме сервиса")
+		fmt.Println("\nstop:\t\t\t\t\t\t//Останавливает работу программы")
+		fmt.Println("\ntime: -time=<hh.mm>\t\t\t\t//Установить время создания BackUp-файла")
+		fmt.Println("\nnew: -login=<Username>  <Router's IP>\t\t//Создать новое подключение")
+		fmt.Println("\nbkp: [-login=<Username>]  [<Router's IP>]\t//Сделать принудительный BackUp")
+		fmt.Println("\n----------------------------------------------------------------------------------------------")
+
 	}
 }
