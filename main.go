@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -66,13 +67,15 @@ func main() {
 			Auth: []ssh.AuthMethod{
 				ssh.Password(*passArg),
 			},
-			//HostKeyCallback: InsecureIgnoreHostKey,
+			HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+				return nil
+			},
 		}
 
 		addr := fmt.Sprintf("%s:%d", *ipArg, *portArg)
 		client, err := ssh.Dial("tcp", addr, config)
 		if err != nil {
-			panic(err)
+			fmt.Printf("Failed to dial: %s", err)
 		}
 
 		session, err := client.NewSession()
