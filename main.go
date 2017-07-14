@@ -23,7 +23,9 @@ type Router struct {
 	port  int
 }
 
-//type Arr [100]Router
+// Arr :: collection for added routers
+var Arr [100]Router
+var index = 0 //Global counter
 
 // Print : Выводит поля экземпляра структуры
 func rPrint(r Router) {
@@ -43,6 +45,7 @@ func main() {
 	nameArg := flag.String("name", "Unknown", "a string") // Задает псеводним роутера
 	hostArg := flag.String("host", "Default", "a string") // Задает хостнейм роутера
 	portArg := flag.Int("port", 22, "an int")             // Задает порт SSH соединения
+	bkpArg := flag.Bool("bkp", false, "a boolean")        // Принудительно запускает процедуру снятия BackUp`ов
 
 	flag.Parse()
 
@@ -65,17 +68,19 @@ func main() {
 	if *newArg != false {
 		var r Router
 		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg)
-
 		importFile(*loginArg, *passArg, *ipArg, *portArg)
 	}
+
+	if *bkpArg != false {
+		//importFile(*loginArg, *passArg, *ipArg, *portArg)
+	}
+
 }
 
 // importFile : Функция, создающая ssh-клиент и sftp-соединение и передающая BackUp конфигурации
 func importFile(loginArg string, passArg string, ipArg string, portArg int) {
 
-	//Создадим ssh-клиент
-
-	//Создадим sftp-соединение и передадим файл конфигурации
+	// Создадим ssh и sftp для передачи файла
 	sftpConnection(sshClient(loginArg, passArg, ipArg, portArg))
 }
 
@@ -104,11 +109,24 @@ func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.
 	}
 	defer session.Close()
 
+	session2, err := client.NewSession()
+	if err != nil {
+		fmt.Printf("Failed to create a new session: %s", err)
+	}
+	defer session2.Close()
+
 	b, err := session.CombinedOutput("/system backup save name=BackUp dont-encrypt=yes") // /system backup save name=BackUp dont-encrypt=yes
 	if err != nil {
 		fmt.Printf("Failed to send output command: %s", err)
 	}
 	fmt.Print(string(b))
+
+	c, err := session2.CombinedOutput("/export file=config.rsc") // /export file=config.rsc
+	if err != nil {
+		fmt.Printf("Failed to send output command: %s", err)
+	}
+	fmt.Print(string(c))
+
 	return client
 }
 
@@ -123,6 +141,7 @@ func sftpConnection(client *ssh.Client) {
 	srcPath := "/"
 	dstPath := "C:/Go/Projects/Test/BackUp/"
 	filename := "BackUp.backup"
+	config := "config.rsc"
 
 	// Open the source file
 	srcFile, err := sftp.Open(srcPath + filename)
@@ -131,6 +150,13 @@ func sftpConnection(client *ssh.Client) {
 	}
 	defer srcFile.Close()
 
+	// Open the source file
+	srcFile2, err := sftp.Open(srcPath + config)
+	if err != nil {
+		fmt.Printf("Failed to open backup file on router: %s", err)
+	}
+	defer srcFile2.Close()
+
 	// Create the destination file
 	dstFile, err := os.Create(dstPath + filename)
 	if err != nil {
@@ -138,8 +164,15 @@ func sftpConnection(client *ssh.Client) {
 	}
 	defer dstFile.Close()
 
+	dstFile2, err := os.Create(dstPath + config)
+	if err != nil {
+		fmt.Printf("Failed to create destination file: %s", err)
+	}
+	defer dstFile2.Close()
+
 	// Copy the file
 	srcFile.WriteTo(dstFile)
+	srcFile2.WriteTo(dstFile2)
 }
 
 // helpPrint : Функция-принтер
@@ -151,7 +184,6 @@ func helpPrint() {
 	fmt.Println("\ntime: -time <hh.mm> [-ip <Router's IP>]\t\t\t\t\t\t\t\t\t\t\t//Установить время создания BackUp-файла")
 	fmt.Println("\nnew: -name <Router's name> -host <Hostname> -login <Username> -pass <Password> -ip <Router's IP> -port <Port>\t\t//Создать новое подключение")
 	fmt.Println("\nbkp: [-login <Username>]  [-ip <Router's IP>]\t\t\t\t\t\t\t\t\t\t//Сделать принудительный BackUp")
-	fmt.Println("\nlist: \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t//Список обслуживаемых роутеров")
 	fmt.Println("\n----------------------------------------------------------------------------------------------")
 }
 
@@ -176,7 +208,7 @@ func timeSetup(time string, ip string) {
 	fmt.Println("\n----------------------------------------------------------------------------------------------")
 }
 
-// newConnection() : Функция, создающая новое подключение к роутеру
+// newConnection : Функция, создающая новое подключение к роутеру
 func newConnection(r Router, name string, hostname string, ip string, login string, port int, pass string) {
 	r.name = name
 	r.host = hostname
@@ -187,4 +219,18 @@ func newConnection(r Router, name string, hostname string, ip string, login stri
 	fmt.Println("----------------------------------------------------------------------------------------------")
 	fmt.Println("\nРоутер\t", name, "\t", hostname, "\t", ip, "\t", login, "\t", pass, "\t", port, "\t\tбыл добавлен")
 	fmt.Println("\n----------------------------------------------------------------------------------------------")
+	Arr[index] = r
+	index++
+}
+
+// routerPrint : Функция-принтер для Router
+func routerPrint(r Router, i int) {
+	fmt.Println("#", i, "\tName: ", r.name, "\tHost: ", r.host, "\tLogin: ", r.login, "\tPassword: ", r.pass, "\tIp: ", r.ip, "\tPort: ", r.port)
+}
+
+// printArr : Функция-принтер для массива
+func printArr() {
+	for i := 0; i < index || i < len(Arr); i++ {
+		routerPrint(Arr[i], i)
+	}
 }
