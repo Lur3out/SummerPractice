@@ -4,9 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"os"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
+
+//import "github.com/pkg/sftp"
 
 // Router :: class for Router type
 type Router struct {
@@ -62,35 +66,80 @@ func main() {
 		var r Router
 		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg)
 
-		config := &ssh.ClientConfig{
-			User: *loginArg,
-			Auth: []ssh.AuthMethod{
-				ssh.Password(*passArg),
-			},
-			HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-				return nil
-			},
-		}
-
-		addr := fmt.Sprintf("%s:%d", *ipArg, *portArg)
-		client, err := ssh.Dial("tcp", addr, config)
-		if err != nil {
-			fmt.Printf("Failed to dial: %s", err)
-		}
-
-		session, err := client.NewSession()
-		if err != nil {
-			panic(err)
-		}
-		defer session.Close()
-
-		b, err := session.CombinedOutput("/system identity print")
-		if err != nil {
-			panic(err)
-		}
-		fmt.Print(string(b))
-
+		importFile(*loginArg, *passArg, *ipArg, *portArg)
 	}
+}
+
+// importFile : Функция, создающая ssh-клиент и sftp-соединение и передающая BackUp конфигурации
+func importFile(loginArg string, passArg string, ipArg string, portArg int) {
+
+	//Создадим ssh-клиент
+
+	//Создадим sftp-соединение и передадим файл конфигурации
+	sftpConnection(sshClient(loginArg, passArg, ipArg, portArg))
+}
+
+// sshClient : Функция, создающая ssh клиент
+func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.Client {
+	config := &ssh.ClientConfig{
+		User: loginArg,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(passArg),
+		},
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			return nil
+		},
+	}
+
+	addr := fmt.Sprintf("%s:%d", ipArg, portArg)
+	client, err := ssh.Dial("tcp", addr, config)
+	if err != nil {
+		fmt.Printf("Failed to dial: %s", err)
+	}
+	fmt.Println("Successfully connected to ", ipArg, ":", portArg)
+
+	session, err := client.NewSession()
+	if err != nil {
+		fmt.Printf("Failed to create a new session: %s", err)
+	}
+	defer session.Close()
+
+	b, err := session.CombinedOutput("/system backup save name=BackUp dont-encrypt=yes") // /system backup save name=BackUp dont-encrypt=yes
+	if err != nil {
+		fmt.Printf("Failed to send output command: %s", err)
+	}
+	fmt.Print(string(b))
+	return client
+}
+
+// sftpConnection : Функция, создающая sftp соединение и импортирующая BackUp файл
+func sftpConnection(client *ssh.Client) {
+	sftp, err := sftp.NewClient(client)
+	if err != nil {
+		fmt.Printf("Failed to create new sftp-client: %s", err)
+	}
+	defer sftp.Close()
+
+	srcPath := "/"
+	dstPath := "C:/Go/Projects/Test/BackUp/"
+	filename := "BackUp.backup"
+
+	// Open the source file
+	srcFile, err := sftp.Open(srcPath + filename)
+	if err != nil {
+		fmt.Printf("Failed to open backup file on router: %s", err)
+	}
+	defer srcFile.Close()
+
+	// Create the destination file
+	dstFile, err := os.Create(dstPath + filename)
+	if err != nil {
+		fmt.Printf("Failed to create destination file: %s", err)
+	}
+	defer dstFile.Close()
+
+	// Copy the file
+	srcFile.WriteTo(dstFile)
 }
 
 // helpPrint : Функция-принтер
