@@ -83,10 +83,13 @@ func main() {
 		var r Router
 		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg)
 		importFile(*loginArg, *passArg, *ipArg, *portArg)
-		sqlDB()
-		hashMD5()
+		fmt.Println("\nMD5_Backup: ", hashMD5Bkp())
+		fmt.Println("SHA1_Backup: ", hashSHA1Bkp())
+		fmt.Println("\n\nMD5_Config: ", hashMD5Cfg())
+		fmt.Println("SHA1_Config: ", hashSHA1Cfg())
+		fmt.Println("\n\nStarting work w/ PGsql")
 		fmt.Println()
-		hashSHA1()
+		sqlDB(hashMD5Bkp(), hashMD5Cfg(), hashSHA1Bkp(), hashSHA1Cfg())
 	}
 
 	if *bkpArg != false {
@@ -194,7 +197,7 @@ func sftpConnection(client *ssh.Client) {
 }
 
 // sqlDB : Функция, создающая БД в PostgreSQL НЕ РАБОТАЕТ!
-func sqlDB() {
+func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 
 	// Создание БД
 	db, err := sql.Open("postgres", "user=backuper password=backup dbname=backup sslmode=disable") //try user:localhost
@@ -203,23 +206,39 @@ func sqlDB() {
 	}
 
 	bkp, err := os.Open("C:/Go/Projects/Test/BackUp/BackUp.backup")
-	bkp.Close()
+	if err != nil {
+		fmt.Println("Can't open BackUp.backup")
+	}
+	defer bkp.Close()
+	bkpInfo, err := bkp.Stat()
+	if err != nil {
+		fmt.Println("Error bkp.Stat()")
+	}
+	bkpsize := bkpInfo.Size()
+	bkpbytes := make([]byte, bkpsize)
+
 	cfg, err := os.Open("C:/Go/Projects/Test/BackUp/config.rsc")
-	cfg.Close()
+	if err != nil {
+		fmt.Println("Can't open config.rsc")
+	}
+	defer cfg.Close()
+	cfgInfo, _ := cfg.Stat()
+	cfgsize := cfgInfo.Size()
+	cfgbytes := make([]byte, cfgsize)
 
 	var lastInsertID int
-	err = db.QueryRow("INSERT INTO backupinfo(md5_bkp, sha1_bkp, md5_cfg, sha1_cfg) VALUES($1,$2,$3,$4) returning backup_id;", "md5_BACKUP", "sha1_BACKUP", "md5_CONFIG", "sha1_CONFIG").Scan(&lastInsertID)
+	err = db.QueryRow("INSERT INTO backupinfo(md5_bkp, sha1_bkp, md5_cfg, sha1_cfg, bkp_file, cfg_file) VALUES($1,$2,$3,$4,$5,$6) returning backup_id;", "md5_BACKUP", "sha1_BACKUP", "md5_CONFIG", "sha1_CONFIG", "bkp_ByteA", "cfg_ByteA").Scan(&lastInsertID)
 	if err != nil {
 		fmt.Println("QueryRow err # 211 string")
 	}
 	fmt.Println("last inserted id =", lastInsertID)
 
 	fmt.Println("# Updating")
-	stmt, err := db.Prepare("update backupinfo set md5_bkp=$1, sha1_bkp=$2, md5_cfg=$3, sha1_cfg=$4 where backup_id=$5")
+	stmt, err := db.Prepare("update backupinfo set md5_bkp=$1, sha1_bkp=$2, md5_cfg=$3, sha1_cfg=$4, bkp_file=$5, cfg_file=$6 where backup_id=$7")
 	if err != nil {
 		fmt.Println("Prepare error #218 string")
 	}
-	res, err := stmt.Exec("md5_BACKUP_Upd", "sha1_BACKUP_Upd", "md5_CONFIG_Upd", "sha1_CONFIG_Upd", lastInsertID)
+	res, err := stmt.Exec(pmd5bkp, psha1bkp, pmd5cfg, psha1cfg, bkpbytes, cfgbytes, lastInsertID)
 	if err != nil {
 		fmt.Println("Exec error #222 string")
 	}
@@ -231,13 +250,54 @@ func sqlDB() {
 
 	fmt.Println(affect, "rows changed")
 
+	fmt.Println("# Querying")
+
+	rows, err := db.Query("SELECT * FROM backupinfo")
+	if err != nil {
+		fmt.Println("Query error #237 string")
+	}
+
+	for rows.Next() {
+		var backupid int
+		md5bkp := pmd5bkp
+		sha1bkp := psha1bkp
+		md5cfg := pmd5cfg
+		sha1cfg := psha1cfg
+		bkpfile := bkpbytes
+		cfgfile := cfgbytes
+		err = rows.Scan(&backupid, &md5bkp, &sha1bkp, &md5cfg, &sha1cfg, &bkpfile, &cfgfile)
+		if err != nil {
+			panic(err) //fmt.Println("Scan error #249 string")
+		}
+		fmt.Println("backup_id | md5_bkp | sha1_bkp | md5_cfg | sha1_cfg | bkp_file | cfg_file")
+		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %2v | %2v\n", backupid, md5bkp, sha1bkp, md5cfg, sha1cfg, bkpfile, cfgfile)
+	}
+
+	//DELETING
+	fmt.Println("# Deleting")
+	stmt, err = db.Prepare("delete from backupinfo where backup_id=$1")
+	if err != nil {
+		fmt.Println("Prepare error #260 string")
+	}
+
+	res, err = stmt.Exec(lastInsertID)
+	if err != nil {
+		fmt.Println("Exec error #265 string")
+	}
+
+	affect, err = res.RowsAffected()
+	if err != nil {
+		fmt.Println("RowsAffected error #270 string")
+	}
+
+	fmt.Println(affect, "rows changed")
+
 }
 
-// hashMD5 : Функция, создающая hash MD5
-func hashMD5() {
+// hashMD5Bkp : Функция, создающая hash MD5 BackUp.backup
+func hashMD5Bkp() string {
 	path := "C:/Go/Projects/Test/BackUp/"
 	backup := "BackUp.backup"
-	config := "config.rsc"
 
 	backupFile, err := os.Open(path + backup)
 	if err != nil {
@@ -250,8 +310,14 @@ func hashMD5() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("BackUp_MD5:%x", backupHash.Sum(nil))
-	fmt.Println()
+	//fmt.Printf("BackUp_MD5:%x", backupHash.Sum(nil))
+	return fmt.Sprintf("%x", backupHash.Sum(nil))
+}
+
+// hashMD5Cfg : Функция, создающая hash MD5 config.rsc
+func hashMD5Cfg() string {
+	path := "C:/Go/Projects/Test/BackUp/"
+	config := "config.rsc"
 
 	configFile, err := os.Open(path + config)
 	if err != nil {
@@ -264,15 +330,15 @@ func hashMD5() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Config_MD5:%x", configHash.Sum(nil))
+	//fmt.Printf("Config_MD5:%x", configHash.Sum(nil))
+	return fmt.Sprintf("%x", configHash.Sum(nil))
 }
 
-// hashSHA1 : Функция, создающая hash SHA1
-func hashSHA1() {
+// hashSHA1Bkp : Функция, создающая hash SHA1 BackUp.backup
+func hashSHA1Bkp() string {
 
 	path := "C:/Go/Projects/Test/BackUp/"
 	backup := "BackUp.backup"
-	config := "config.rsc"
 
 	backupFile, err := os.Open(path + backup)
 	if err != nil {
@@ -285,8 +351,15 @@ func hashSHA1() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("BackUp_SHA1:% x", backupHash.Sum(nil))
-	fmt.Println()
+	//fmt.Printf("BackUp_SHA1:% x", backupHash.Sum(nil))
+	return fmt.Sprintf("%x", backupHash.Sum(nil))
+}
+
+// hashSHA1Cfg : Функция, создающая hash SHA1 config.rsc
+func hashSHA1Cfg() string {
+
+	path := "C:/Go/Projects/Test/BackUp/"
+	config := "config.rsc"
 
 	configFile, err := os.Open(path + config)
 	if err != nil {
@@ -299,8 +372,8 @@ func hashSHA1() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Config_SHA1:% x", configHash.Sum(nil))
-
+	//fmt.Printf("Config_SHA1:% x", configHash.Sum(nil))
+	return fmt.Sprintf("%x", configHash.Sum(nil))
 }
 
 // helpPrint : Функция-принтер
