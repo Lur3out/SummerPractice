@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	"crypto/sha1"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -84,6 +85,8 @@ func main() {
 		importFile(*loginArg, *passArg, *ipArg, *portArg)
 		sqlDB()
 		hashMD5()
+		fmt.Println()
+		hashSHA1()
 	}
 
 	if *bkpArg != false {
@@ -194,33 +197,40 @@ func sftpConnection(client *ssh.Client) {
 func sqlDB() {
 
 	// Создание БД
-	db, err := sql.Open("postgres", "user=postgres password=N0vember1 dbname=backup sslmode=disable") //try user:localhost
+	db, err := sql.Open("postgres", "user=backuper password=backup dbname=backup sslmode=disable") //try user:localhost
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	rows, err := db.Query("SELECT * FROM backup") //was SELECT * FROM books
+	bkp, err := os.Open("C:/Go/Projects/Test/BackUp/BackUp.backup")
+	bkp.Close()
+	cfg, err := os.Open("C:/Go/Projects/Test/BackUp/config.rsc")
+	cfg.Close()
+
+	var lastInsertID int
+	err = db.QueryRow("INSERT INTO backupinfo(md5_bkp, sha1_bkp, md5_cfg, sha1_cfg) VALUES($1,$2,$3,$4) returning backup_id;", "md5_BACKUP", "sha1_BACKUP", "md5_CONFIG", "sha1_CONFIG").Scan(&lastInsertID)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("QueryRow err # 211 string")
 	}
-	defer rows.Close()
+	fmt.Println("last inserted id =", lastInsertID)
 
-	bkps := make([]*BackUp, 0)
-	for rows.Next() {
-		bkp := new(BackUp)
-		err := rows.Scan(&bkp.backupHash, &bkp.configHash)
-		if err != nil {
-			log.Fatal(err)
-		}
-		bkps = append(bkps, bkp)
+	fmt.Println("# Updating")
+	stmt, err := db.Prepare("update backupinfo set md5_bkp=$1, sha1_bkp=$2, md5_cfg=$3, sha1_cfg=$4 where backup_id=$5")
+	if err != nil {
+		fmt.Println("Prepare error #218 string")
 	}
-	if err = rows.Err(); err != nil {
-		log.Fatal(err)
+	res, err := stmt.Exec("md5_BACKUP_Upd", "sha1_BACKUP_Upd", "md5_CONFIG_Upd", "sha1_CONFIG_Upd", lastInsertID)
+	if err != nil {
+		fmt.Println("Exec error #222 string")
 	}
 
-	for _, bkp := range bkps {
-		fmt.Printf("%s, %s\n", bkp.backupHash, bkp.configHash)
+	affect, err := res.RowsAffected()
+	if err != nil {
+		fmt.Println("RowsAffected error #227 string")
 	}
+
+	fmt.Println(affect, "rows changed")
+
 }
 
 // hashMD5 : Функция, создающая hash MD5
@@ -255,6 +265,42 @@ func hashMD5() {
 	}
 
 	fmt.Printf("Config_MD5:%x", configHash.Sum(nil))
+}
+
+// hashSHA1 : Функция, создающая hash SHA1
+func hashSHA1() {
+
+	path := "C:/Go/Projects/Test/BackUp/"
+	backup := "BackUp.backup"
+	config := "config.rsc"
+
+	backupFile, err := os.Open(path + backup)
+	if err != nil {
+		fmt.Print("Не удалось открыть BackUp.backup", err)
+	}
+	defer backupFile.Close()
+
+	backupHash := sha1.New()
+	if _, err := io.Copy(backupHash, backupFile); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("BackUp_SHA1:% x", backupHash.Sum(nil))
+	fmt.Println()
+
+	configFile, err := os.Open(path + config)
+	if err != nil {
+		fmt.Print("Не удалось открыть config.rsc", err)
+	}
+	defer configFile.Close()
+
+	configHash := sha1.New()
+	if _, err := io.Copy(configHash, configFile); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Config_SHA1:% x", configHash.Sum(nil))
+
 }
 
 // helpPrint : Функция-принтер
