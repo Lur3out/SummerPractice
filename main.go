@@ -1,16 +1,20 @@
 package main
 
 import (
+	"crypto/md5"
+	"database/sql"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"os"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
-)
 
-//import "github.com/pkg/sftp"
+	_ "github.com/lib/pq"
+)
 
 // Router :: class for Router type
 type Router struct {
@@ -23,9 +27,18 @@ type Router struct {
 	port  int
 }
 
+// BackUp :: class for BackUp type
+type BackUp struct {
+	backupHash string
+	configHash string
+}
+
 // Arr :: collection for added routers
 var Arr [100]Router
 var index = 0 //Global counter
+
+// dbconnect :: Параметры подключения к БД
+const dbconnect = "host=localhost port=5432 user=postgres password=N0vember1 dbname=backup sslmode=disable"
 
 // Print : Выводит поля экземпляра структуры
 func rPrint(r Router) {
@@ -69,6 +82,8 @@ func main() {
 		var r Router
 		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg)
 		importFile(*loginArg, *passArg, *ipArg, *portArg)
+		sqlDB()
+		hashMD5()
 	}
 
 	if *bkpArg != false {
@@ -173,6 +188,73 @@ func sftpConnection(client *ssh.Client) {
 	// Copy the file
 	srcFile.WriteTo(dstFile)
 	srcFile2.WriteTo(dstFile2)
+}
+
+// sqlDB : Функция, создающая БД в PostgreSQL НЕ РАБОТАЕТ!
+func sqlDB() {
+
+	// Создание БД
+	db, err := sql.Open("postgres", "user=postgres password=N0vember1 dbname=backup sslmode=disable") //try user:localhost
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rows, err := db.Query("SELECT * FROM backup") //was SELECT * FROM books
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	bkps := make([]*BackUp, 0)
+	for rows.Next() {
+		bkp := new(BackUp)
+		err := rows.Scan(&bkp.backupHash, &bkp.configHash)
+		if err != nil {
+			log.Fatal(err)
+		}
+		bkps = append(bkps, bkp)
+	}
+	if err = rows.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	for _, bkp := range bkps {
+		fmt.Printf("%s, %s\n", bkp.backupHash, bkp.configHash)
+	}
+}
+
+// hashMD5 : Функция, создающая hash MD5
+func hashMD5() {
+	path := "C:/Go/Projects/Test/BackUp/"
+	backup := "BackUp.backup"
+	config := "config.rsc"
+
+	backupFile, err := os.Open(path + backup)
+	if err != nil {
+		fmt.Print("Не удалось открыть BackUp.backup", err)
+	}
+	defer backupFile.Close()
+
+	backupHash := md5.New()
+	if _, err := io.Copy(backupHash, backupFile); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("BackUp_MD5:%x", backupHash.Sum(nil))
+	fmt.Println()
+
+	configFile, err := os.Open(path + config)
+	if err != nil {
+		fmt.Print("Не удалось открыть config.rsc", err)
+	}
+	defer configFile.Close()
+
+	configHash := md5.New()
+	if _, err := io.Copy(configHash, configFile); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Config_MD5:%x", configHash.Sum(nil))
 }
 
 // helpPrint : Функция-принтер
