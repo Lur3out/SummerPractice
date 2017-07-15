@@ -14,6 +14,8 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
+	"io/ioutil"
+
 	_ "github.com/lib/pq"
 )
 
@@ -270,7 +272,22 @@ func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 			panic(err) //fmt.Println("Scan error #249 string")
 		}
 		fmt.Println("backup_id | md5_bkp | sha1_bkp | md5_cfg | sha1_cfg | bkp_file | cfg_file")
-		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %2v | %2v\n", backupid, md5bkp, sha1bkp, md5cfg, sha1cfg, bkpfile, cfgfile)
+		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %2v | %1v\n", backupid, md5bkp, sha1bkp, md5cfg, sha1cfg, bkpfile, cfgfile)
+		//**********Back to FILE from ByteArray
+		permissions := os.FileMode(0644)
+		bkpbyteArray := []byte("to be written to a file\n")
+		bkperr := ioutil.WriteFile("C:/Go/Projects/Test/BackUp/reversedBackUp.backup", bkpbyteArray, permissions)
+		if bkperr != nil {
+			fmt.Println("Не удалось конвертировать обратно файл")
+		}
+
+		cfgbyteArray := []byte("to be written to a file\n")
+		cfgerr := ioutil.WriteFile("C:/Go/Projects/Test/BackUp/reversed_config.rsc", cfgbyteArray, permissions)
+		if cfgerr != nil {
+			fmt.Println("Не удалось конвертировать обратно в файл")
+		}
+
+		//*************************************
 	}
 
 	//DELETING
