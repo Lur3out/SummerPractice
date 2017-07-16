@@ -6,7 +6,7 @@
 //
 //  ►Подключение к базе вынести в Json
 //  ►Временную папку для файлов туда же
-//  Информацию для подключения к роутерам в базу.
+//  ►Информацию для подключения к роутерам в базу.
 //  Процесс снятия конфигурации отделить от процесса снятия бекапа
 //  -Реализуй количество бекапов хранимое в базе через параметр. При достижении, которого, самый старый бекап удаляется.
 //  ►В таблицах. Хранить бекапы и конфигурации в одной таблице, хеши в другой!
@@ -50,20 +50,6 @@ type Router struct {
 	port  int
 }
 
-/*// BackUp :: class for BackUp type -- Изменить!
-type BackUp struct {
-	backupHash string
-	configHash string
-}*/
-
-// dbconnect :: Параметры подключения к БД -- вынести в .json
-const dbconnect = "host=localhost port=5432 user=postgres password=N0vember1 dbname=backup sslmode=disable"
-
-/*// Print : Выводит поля экземпляра структуры --удалить?
-func rPrint(r Router) {
-	fmt.Println("Num: ", r.num, " name: ", r.name, " hostname: ", r.host, " login: ", r.login, " pass: ", r.pass, " ip: ", r.ip)
-}*/
-
 func main() {
 	helpArg := flag.Bool("help", false, "a boolean")      // Отображает доступные команды
 	ipArg := flag.String("ip", "0.0.0.0", "a string")     // Задает Ip роутера
@@ -77,14 +63,14 @@ func main() {
 	bkpArg := flag.Bool("bkp", false, "a boolean")        // Включает снятие бэкапов
 	makeArg := flag.Bool("make", false, "a boolean")      // Снятие бэкапа
 	pathArg := flag.String("path", "./", "a string")      // Указывает путь на data.json
-	//countArg := flag.Int("cnt", 5, "an int")                           // Счетчик количество Бэкапов и конфигов для каждого роутера в БД
-	flag.Args() // Имена роутеров, работает только после флага.
+	flag.Args()                                           // Имена роутеров, работает только после флага.
 
 	flag.Parse()
 
 	//[0] - sql.BD address; [1] - path to BAckUps
-	parametres := getData(*pathArg)
-	fmt.Println(parametres[0], "", parametres[1])
+	params := getData(*pathArg)
+	//Массив входщящих параметров(имен роутреов)
+	names := flag.Args()
 
 	if *helpArg == true {
 		helpPrint()
@@ -93,29 +79,22 @@ func main() {
 	// Изменить!
 	if *newArg != false {
 		var r Router
-		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg)
-		importFile(*loginArg, *passArg, *ipArg, *portArg)
-		fmt.Println("\nMD5_Backup: ", hashMD5Bkp())
-		fmt.Println("SHA1_Backup: ", hashSHA1Bkp())
-		fmt.Println("\n\nMD5_Config: ", hashMD5Cfg())
-		fmt.Println("SHA1_Config: ", hashSHA1Cfg())
-		fmt.Println("\n\nStarting work w/ PGsql")
+		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg, params)
 		fmt.Println()
-		//sqlDB(hashMD5Bkp(), hashMD5Cfg(), hashSHA1Bkp(), hashSHA1Cfg())*/
 	}
 
 	if *makeArg != false {
 		if *bkpArg != false {
 			if *allArg != false {
-				makeAllBackUp(getData(*pathArg))
+				makeAllBackUp(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
 			}
-			makeBackUp(getData(*pathArg))
+			makeBackUp(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg)
 		}
 		if *allArg != false && *bkpArg == false {
-			makeAllConfig(getData(*pathArg))
+			makeAllConfig(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
 		}
 		if *bkpArg == false && *allArg == false {
-			makeConfig(getData(*pathArg))
+			makeConfig(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg)
 		}
 	}
 
@@ -134,13 +113,7 @@ func helpPrint() {
 }
 
 //*************************************************************
-//----------------------SSH u SFTP-----------------------------
-// importFile : Функция, создающая ssh-клиент и sftp-соединение и передающая BackUp конфигурации -- Изменить!
-func importFile(loginArg string, passArg string, ipArg string, portArg int) {
-
-	// Создадим ssh и sftp для передачи файла
-	sftpConnection(sshClient(loginArg, passArg, ipArg, portArg))
-}
+//-----------------------------SSH-----------------------------
 
 // sshClient : Функция, создающая ssh клиент -- Изменить!
 func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.Client {
@@ -188,6 +161,55 @@ func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.
 	return client
 }
 
+// sshRouter : Функция, возвращающая ssh-клиент для роутера
+func sshRouter(login string, pass string, ip string, port int) *ssh.Client {
+	config := &ssh.ClientConfig{
+		User: login,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(pass),
+		},
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			return nil
+		},
+	}
+
+	addr := fmt.Sprintf("%s:%d", ip, port)
+	client, err := ssh.Dial("tcp", addr, config)
+	if err != nil {
+		fmt.Printf("Failed to dial: %s", err)
+	}
+	fmt.Println("Successfully connected to ", ip, ":", port)
+
+	session, err := client.NewSession()
+	if err != nil {
+		fmt.Printf("Failed to create a new session: %s", err)
+	}
+	defer session.Close()
+
+	b, err := session.CombinedOutput("/system backup save name=BackUp dont-encrypt=yes") // /system backup save name=BackUp dont-encrypt=yes
+	if err != nil {
+		fmt.Printf("Failed to send output command: %s", err)
+	}
+	fmt.Print(string(b))
+
+	session2, err := client.NewSession()
+	if err != nil {
+		fmt.Printf("Failed to create a new session: %s", err)
+	}
+	defer session2.Close()
+
+	c, err := session2.CombinedOutput("/export file=config.rsc") // /export file=config.rsc
+	if err != nil {
+		fmt.Printf("Failed to send output command: %s", err)
+	}
+	fmt.Print(string(c))
+
+	return client
+}
+
+//*************************************************************
+//---------------------------SFTP------------------------------
+
 // sftpConnection : Функция, создающая sftp соединение и импортирующая BackUp файл -- Изменить!
 func sftpConnection(client *ssh.Client) {
 	sftp, err := sftp.NewClient(client)
@@ -233,11 +255,64 @@ func sftpConnection(client *ssh.Client) {
 	srcFile2.WriteTo(dstFile2)
 }
 
+// sftpRouter : Функция, создающая sftp соединение и экспортирующая backup\rsc.
+func sftpRouter(client *ssh.Client, bkp bool, path string) {
+	sftp, err := sftp.NewClient(client)
+	if err != nil {
+		fmt.Printf("Failed to create new sftp-client: %s", err)
+	}
+	defer sftp.Close()
+
+	srcPath := "/"
+	dstPath := path
+	filename := "BackUp.backup"
+	config := "config.rsc"
+
+	if bkp == true {
+
+		// Open the source file
+		srcFile, err := sftp.Open(srcPath + filename)
+		if err != nil {
+			fmt.Printf("Failed to open backup file on router: %s", err)
+		}
+		defer srcFile.Close()
+
+		// Create the destination file
+		dstFile, err := os.Create(dstPath + filename)
+		if err != nil {
+			fmt.Printf("Failed to create destination file: %s", err)
+		}
+		defer dstFile.Close()
+
+		// Copy the file
+		srcFile.WriteTo(dstFile)
+	} else {
+
+		// Open the source file
+		srcFile2, err := sftp.Open(srcPath + config)
+		if err != nil {
+			fmt.Printf("Failed to open config file on router: %s", err)
+		}
+		defer srcFile2.Close()
+
+		dstFile2, err := os.Create(dstPath + config)
+		if err != nil {
+			fmt.Printf("Failed to create destination file: %s", err)
+		}
+		defer dstFile2.Close()
+		// Copy the file
+		srcFile2.WriteTo(dstFile2)
+	}
+
+}
+
+//*************************************************************
+//-------------------------SQL---------------------------------
 // sqlDB : Функция, создающая БД в PostgreSQL -- Изменить!
 func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 
-	// Создание БД
-	db, err := sql.Open("postgres", "user=backuper password=backup dbname=backup sslmode=disable") //try user:localhost
+	// Подключение к БД
+	db, err := sql.Open("postgres", "user=backuper password=backup dbname=backup sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -247,10 +322,7 @@ func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 		fmt.Println("Can't open BackUp.backup")
 	}
 	defer bkp.Close()
-	bkpInfo, err := bkp.Stat()
-	if err != nil {
-		fmt.Println("Error bkp.Stat()")
-	}
+	bkpInfo, _ := bkp.Stat()
 	bkpsize := bkpInfo.Size()
 	bkpbytes := make([]byte, bkpsize)
 
@@ -344,6 +416,185 @@ func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 
 	fmt.Println(affect, "rows changed")
 
+}
+
+// connectDB : Функция, создающая подключение к PostgreSql по настройкам из файла data.json
+func connectDB(settings string) *sql.DB {
+
+	// Подключение к БД
+	db, err := sql.Open("postgres", settings)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return db
+}
+
+// addNewRouter : Функция, добавляющая данные нового подключения в PostgreSql
+func addNewRouter(r Router, settings string) {
+	// db - sql.DB
+	//db := connectDB(settings)
+	db, err := sql.Open("postgres", settings)
+
+	var lastInsertID int
+	err = db.QueryRow("INSERT INTO test(name, ip, port, login, pass) VALUES($1,$2,$3,$4,$5) returning test_id;", r.name, r.ip, r.port, r.login, r.pass).Scan(&lastInsertID)
+	if err != nil {
+		fmt.Println("QueryRow err #370 string")
+	}
+	fmt.Println("last inserted id =", lastInsertID)
+
+	add, err := db.Prepare("update test set name=$1, ip=$2, port=$3, login=$4, pass=$5 where test_id=$6")
+	if err != nil {
+		fmt.Println("Prepare error #373 string")
+	}
+
+	res, err := add.Exec(r.name, r.ip, r.port, r.login, r.pass, 1)
+	if err != nil {
+		fmt.Println("Exec error #377 string")
+	}
+	affect, err := res.RowsAffected()
+	if err != nil {
+		fmt.Println("RowsAffected error #227 string")
+	}
+
+	fmt.Println(affect, "rows changed")
+	/*
+		rows, err := db.Query("SELECT * FROM test")
+		if err != nil {
+			fmt.Println("Query error #237 string")
+		}
+
+		for rows.Next() {
+			var testid int
+			var r Router
+			name := r.name
+			ip := r.ip
+			port := r.port
+			login := r.login
+			pass := r.pass
+			err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
+			if err != nil {
+				fmt.Println("Scan error #408 string")
+			}
+
+		}
+	*/
+	defer db.Close()
+}
+
+// test : TEST
+func test(r Router, settings string) {
+	// Подключение к БД
+	db, err := sql.Open("postgres", settings)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var lastInsertID int
+	err = db.QueryRow("INSERT INTO test(name, ip, port, login, pass) VALUES($1,$2,$3,$4,$5) returning test_id;", r.name, r.ip, r.port, r.login, r.pass).Scan(&lastInsertID)
+	if err != nil {
+		panic(err) //fmt.Println("QueryRow err # 427 string")
+	}
+	fmt.Println("last inserted id =", lastInsertID)
+
+	fmt.Println("# Updating")
+	stmt, err := db.Prepare("update test set name=$1, ip=$2, port=$3, login=$4, pass=$5 where test_id=$6")
+	if err != nil {
+		fmt.Println("Prepare error #434 string")
+	}
+	res, err := stmt.Exec(r.name, r.ip, r.port, r.login, r.pass, lastInsertID)
+	if err != nil {
+		fmt.Println("Exec error #438 string")
+	}
+
+	affect, err := res.RowsAffected()
+	if err != nil {
+		fmt.Println("RowsAffected error #443 string")
+	}
+
+	fmt.Println(affect, "rows changed")
+
+	fmt.Println("# Querying")
+
+	rows, err := db.Query("SELECT * FROM test")
+	if err != nil {
+		fmt.Println("Query error #452 string")
+	}
+
+	for rows.Next() {
+		var testid int
+		name := r.name
+		ip := r.ip
+		port := r.port
+		login := r.login
+		pass := r.pass
+		err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
+		if err != nil {
+			panic(err) //fmt.Println("Scan error #464 string")
+		}
+		fmt.Println("test_id | name | ip | port | login | pass")
+		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
+
+		//*************************************
+	}
+
+	//DELETING
+	fmt.Println("# Deleting")
+	stmt, err = db.Prepare("delete from test where test_id=$1")
+	if err != nil {
+		fmt.Println("Prepare error #476 string")
+	}
+
+	res, err = stmt.Exec(lastInsertID)
+	if err != nil {
+		fmt.Println("Exec error #481 string")
+	}
+
+	affect, err = res.RowsAffected()
+	if err != nil {
+		fmt.Println("RowsAffected error #486 string")
+	}
+
+	fmt.Println(affect, "rows changed")
+}
+
+// printAllConnected : Функция, выводящая все подключенные роутеры
+func printAllConnected(db *sql.DB) {
+	rows, err := db.Query("SELECT * FROM test")
+	if err != nil {
+		fmt.Println("Query error #452 string")
+	}
+
+	for rows.Next() {
+		var testid int
+		name := ""
+		ip := ""
+		port := 0
+		login := ""
+		pass := ""
+		err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
+		if err != nil {
+			panic(err) //fmt.Println("Scan error #464 string")
+		}
+		fmt.Println("test_id | name | ip | port | login | pass")
+		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
+
+		//*************************************
+	}
+	defer db.Close()
+}
+
+// deleteRow : Delete row
+func deleteRow(index int, settings string) {
+	fmt.Println("# Deleting")
+
+	db := connectDB(settings)
+	stmt, _ := db.Prepare("delete from test where test_id=$1")
+
+	res, _ := stmt.Exec(index)
+
+	affect, _ := res.RowsAffected()
+
+	fmt.Println(affect, "rows changed")
 }
 
 //**************************************************************
@@ -458,7 +709,7 @@ func getData(path string) [2]string {
 //**************************************************************
 //-------------------NEW CONNECTION(ROUTER)---------------------
 // newConnection : Функция, создающая новое подключение к роутеру -- Изменить! Добавить!
-func newConnection(r Router, name string, hostname string, ip string, login string, port int, pass string) {
+func newConnection(r Router, name string, hostname string, ip string, login string, port int, pass string, params [2]string) {
 	r.name = name
 	r.host = hostname
 	r.ip = ip
@@ -466,52 +717,63 @@ func newConnection(r Router, name string, hostname string, ip string, login stri
 	r.port = port
 	r.pass = pass
 	fmt.Println("----------------------------------------------------------------------------------------------")
-	fmt.Println("\nРоутер\t", name, "\t", hostname, "\t", ip, "\t", login, "\t", pass, "\t", port, "\t\tбыл добавлен")
+	fmt.Println("\nРоутер\t", r.name, "\t", r.host, "\t", r.ip, "\t", r.login, "\t", r.pass, "\t", r.port, "\t\tбыл добавлен")
 	fmt.Println("\n----------------------------------------------------------------------------------------------")
+	//SQL-Adding
+	//test(r, params[0])
+
+	//addNewRouter(r, params[0])
+	printAllConnected(connectDB(params[0]))
+	//deleteRow(1, params[0])
+
 }
 
-/*// routerPrint : Функция-принтер для Router -- Изменить! Добавить!
+// routerPrint : Функция-принтер для Router -- Изменить! Добавить!
 func routerPrint(r Router, i int) {
 	fmt.Println("#", i, "\tName: ", r.name, "\tHost: ", r.host, "\tLogin: ", r.login, "\tPassword: ", r.pass, "\tIp: ", r.ip, "\tPort: ", r.port)
-}*/
+}
 
 //***************************************************************
 //----------------------Type Of BackUps--------------------------
-
-//***************************************************************
-
 // makeAllBackUp : -make -all -bkp
-func makeAllBackUp(params [2]string) {
+func makeAllBackUp(params [2]string, ip string, port int, login string, pass string, bkp bool, names []string) {
 	//Снятие полных бэкапов со всех роутеров
 
 	//dbconfig := params[0]
 	//savepath := params[1]
 
+	sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
+
 }
 
 // makeBackUp : -make -bkp <names>
-func makeBackUp(params [2]string) {
+func makeBackUp(params [2]string, ip string, port int, login string, pass string, bkp bool) {
 	//Снятие бэкапов с перечисленных роутеров
 
 	//dbconfig := params[0]
 	//savepath := params[1]
 
+	sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
 }
 
 // makeAllConfig : -make -all
-func makeAllConfig(params [2]string) {
+func makeAllConfig(params [2]string, ip string, port int, login string, pass string, bkp bool, names []string) {
 	//Снятие конфигов со всех роутеров
 
 	//dbconfig := params[0]
 	//savepath := params[1]
 
+	sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
 }
 
 // makeConfig : -make <names>
-func makeConfig(params [2]string) {
+func makeConfig(params [2]string, ip string, port int, login string, pass string, bkp bool) {
 	//Снятие конфигов с перечисленных роутеров
 
 	//dbconfig := params[0]
 	//savepath := params[1]
 
+	sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
 }
+
+//***************************************************************
