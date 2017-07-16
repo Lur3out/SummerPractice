@@ -1,18 +1,14 @@
 package main
 
 import (
-<<<<<<< HEAD
 	"crypto/md5"
 	"crypto/sha1"
 	"database/sql"
 	"flag"
-=======
->>>>>>> master
 	"fmt"
 	"io"
 	"log"
 	"net"
-<<<<<<< HEAD
 	"os"
 
 	"github.com/pkg/sftp"
@@ -456,11 +452,3 @@ func printArr() {
 		routerPrint(Arr[i], i)
 	}
 }
-=======
-)
-
-func main() {
-	
-}
-
->>>>>>> master
