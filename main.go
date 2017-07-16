@@ -1,6 +1,26 @@
+//  ►Сделать три таблицы: роутеры+конфиги, хэши бэкапов+хэши конфигов, бэкапы+конфиги
+//
+//  ►Сделать флаг -bkp :: bool для снятия только бэкапа(если отсутствует - то снимается конфиг)
+//  ►Сделать массив входящих параметров=имена роутеров, с которых снять бэкапы, имена сверяются с именами из БД
+//  ►Сделать флаг -all снятия бэкапа со всех роутеров из БД
+//
+//  ►Подключение к базе вынести в Json
+//  ►Временную папку для файлов туда же
+//  Информацию для подключения к роутерам в базу.
+//  Процесс снятия конфигурации отделить от процесса снятия бекапа
+//  -Реализуй количество бекапов хранимое в базе через параметр. При достижении, которого, самый старый бекап удаляется.
+//  ►В таблицах. Хранить бекапы и конфигурации в одной таблице, хеши в другой!
+//  ►Добавить в таблицу хешей время создания и имя роутера.
+//  ►Так же добавь в таблицу поле-флаг. Конфигурация или бекап.
+//
+//
+//
+//
+
 package main
 
 import (
+	"bufio"
 	"crypto/md5"
 	"crypto/sha1"
 	"database/sql"
@@ -19,7 +39,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// Router :: class for Router type
+// Router :: class for Router type -- Изменить!
 type Router struct {
 	num   int
 	name  string
@@ -30,57 +50,47 @@ type Router struct {
 	port  int
 }
 
-// BackUp :: class for BackUp type
+/*// BackUp :: class for BackUp type -- Изменить!
 type BackUp struct {
 	backupHash string
 	configHash string
-}
+}*/
 
-// Arr :: collection for added routers
-var Arr [100]Router
-var index = 0 //Global counter
-
-// dbconnect :: Параметры подключения к БД
+// dbconnect :: Параметры подключения к БД -- вынести в .json
 const dbconnect = "host=localhost port=5432 user=postgres password=N0vember1 dbname=backup sslmode=disable"
 
-// Print : Выводит поля экземпляра структуры
+/*// Print : Выводит поля экземпляра структуры --удалить?
 func rPrint(r Router) {
 	fmt.Println("Num: ", r.num, " name: ", r.name, " hostname: ", r.host, " login: ", r.login, " pass: ", r.pass, " ip: ", r.ip)
-}
+}*/
 
 func main() {
 	helpArg := flag.Bool("help", false, "a boolean")      // Отображает доступные команды
-	startArg := flag.Bool("start", false, "a boolean")    // Запускает программу в режим службы
-	stopArg := flag.Bool("stop", false, "a boolean")      // Оставанливает программу
-	timeArg := flag.String("time", "00.00", "a string")   // Задает новое время снятия BackUp
 	ipArg := flag.String("ip", "0.0.0.0", "a string")     // Задает Ip роутера
-	changeArg := flag.Bool("chng", false, "a boolean")    // Включает функцию изменения времени
+	allArg := flag.Bool("all", false, "a boolean")        // Включает снятия бэкапа со всех роутеров
 	newArg := flag.Bool("new", false, "a boolean")        // Создает новое подключение к роутеру
 	loginArg := flag.String("login", "admin", "a string") // Задает логин для подключения к роутеру
 	passArg := flag.String("pass", "", "a string")        // Задает пароль для подключения к роутеру
 	nameArg := flag.String("name", "Unknown", "a string") // Задает псеводним роутера
 	hostArg := flag.String("host", "Default", "a string") // Задает хостнейм роутера
 	portArg := flag.Int("port", 22, "an int")             // Задает порт SSH соединения
-	bkpArg := flag.Bool("bkp", false, "a boolean")        // Принудительно запускает процедуру снятия BackUp`ов
+	bkpArg := flag.Bool("bkp", false, "a boolean")        // Включает снятие бэкапов
+	makeArg := flag.Bool("make", false, "a boolean")      // Снятие бэкапа
+	pathArg := flag.String("path", "./", "a string")      // Указывает путь на data.json
+	//countArg := flag.Int("cnt", 5, "an int")                           // Счетчик количество Бэкапов и конфигов для каждого роутера в БД
+	flag.Args() // Имена роутеров, работает только после флага.
 
 	flag.Parse()
+
+	//[0] - sql.BD address; [1] - path to BAckUps
+	parametres := getData(*pathArg)
+	fmt.Println(parametres[0], "", parametres[1])
 
 	if *helpArg == true {
 		helpPrint()
 	}
 
-	if *startArg == true {
-		startProgram()
-	}
-
-	if *stopArg == true {
-		stopProgram()
-	}
-
-	if *changeArg != false {
-		timeSetup(*timeArg, *ipArg)
-	}
-
+	// Изменить!
 	if *newArg != false {
 		var r Router
 		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg)
@@ -91,23 +101,48 @@ func main() {
 		fmt.Println("SHA1_Config: ", hashSHA1Cfg())
 		fmt.Println("\n\nStarting work w/ PGsql")
 		fmt.Println()
-		sqlDB(hashMD5Bkp(), hashMD5Cfg(), hashSHA1Bkp(), hashSHA1Cfg())
+		//sqlDB(hashMD5Bkp(), hashMD5Cfg(), hashSHA1Bkp(), hashSHA1Cfg())*/
 	}
 
-	if *bkpArg != false {
-		//importFile(*loginArg, *passArg, *ipArg, *portArg)
+	if *makeArg != false {
+		if *bkpArg != false {
+			if *allArg != false {
+				makeAllBackUp(getData(*pathArg))
+			}
+			makeBackUp(getData(*pathArg))
+		}
+		if *allArg != false && *bkpArg == false {
+			makeAllConfig(getData(*pathArg))
+		}
+		if *bkpArg == false && *allArg == false {
+			makeConfig(getData(*pathArg))
+		}
 	}
 
 }
 
-// importFile : Функция, создающая ssh-клиент и sftp-соединение и передающая BackUp конфигурации
+//*************************************************************
+//---------------------- -HELP---------------------------------
+// helpPrint : Функция-принтер
+func helpPrint() {
+	fmt.Print("----------------------------------------------------------------------------------------------")
+	fmt.Println("\nAllowed commands:")
+	fmt.Println("\npath:  <Path to data.json>\t\t\t\t\t\t\t\t\t\t\t\t\t// Укажите путь к файлу data.json в формате <Disk>:/~/")
+	fmt.Println("\nnew: -name <Router's name> -host <Hostname> -login <Username> -pass <Password> -ip <Router's IP> -port <Port>\t\t//Создать новое подключение")
+	fmt.Println("\nmake: [-bkp ] [-all] <Routers' names>\t\t\t\t\t\t\t\t\t\t\t\t//Запуск процедуры снятия бэкапов.\n\n\nАтрибуты:\n\n-bkp\t\t\tПри указании атрибута произведется снятие полного бэкапа. По умолчанию снимается конфигурационный файл.\n\n-all\t\t\tПри указании снимаются бэкапы/конфиги со всех роутеров, подключенных к прогамме\n\n\nВходящие параметры:\n\n<Routers' names>\tЧерез пробел перечилите названия роутеров, с которых произвести снятие бэкапа. При наличии атрибута -all снятие будет произведено со всех.")
+	fmt.Println("\n----------------------------------------------------------------------------------------------")
+}
+
+//*************************************************************
+//----------------------SSH u SFTP-----------------------------
+// importFile : Функция, создающая ssh-клиент и sftp-соединение и передающая BackUp конфигурации -- Изменить!
 func importFile(loginArg string, passArg string, ipArg string, portArg int) {
 
 	// Создадим ssh и sftp для передачи файла
 	sftpConnection(sshClient(loginArg, passArg, ipArg, portArg))
 }
 
-// sshClient : Функция, создающая ssh клиент
+// sshClient : Функция, создающая ssh клиент -- Изменить!
 func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.Client {
 	config := &ssh.ClientConfig{
 		User: loginArg,
@@ -153,7 +188,7 @@ func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.
 	return client
 }
 
-// sftpConnection : Функция, создающая sftp соединение и импортирующая BackUp файл
+// sftpConnection : Функция, создающая sftp соединение и импортирующая BackUp файл -- Изменить!
 func sftpConnection(client *ssh.Client) {
 	sftp, err := sftp.NewClient(client)
 	if err != nil {
@@ -198,7 +233,7 @@ func sftpConnection(client *ssh.Client) {
 	srcFile2.WriteTo(dstFile2)
 }
 
-// sqlDB : Функция, создающая БД в PostgreSQL НЕ РАБОТАЕТ!
+// sqlDB : Функция, создающая БД в PostgreSQL -- Изменить!
 func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 
 	// Создание БД
@@ -311,6 +346,9 @@ func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 
 }
 
+//**************************************************************
+//----------------------MD5 u SHA-1-----------------------------
+
 // hashMD5Bkp : Функция, создающая hash MD5 BackUp.backup
 func hashMD5Bkp() string {
 	path := "C:/Go/Projects/Test/BackUp/"
@@ -393,40 +431,33 @@ func hashSHA1Cfg() string {
 	return fmt.Sprintf("%x", configHash.Sum(nil))
 }
 
-// helpPrint : Функция-принтер
-func helpPrint() {
-	fmt.Print("----------------------------------------------------------------------------------------------")
-	fmt.Println("\nAllowed commands:")
-	fmt.Println("\nstart:\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t//Запускает программу в режиме сервиса")
-	fmt.Println("\nstop:\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t//Останавливает работу программы")
-	fmt.Println("\ntime: -time <hh.mm> [-ip <Router's IP>]\t\t\t\t\t\t\t\t\t\t\t//Установить время создания BackUp-файла")
-	fmt.Println("\nnew: -name <Router's name> -host <Hostname> -login <Username> -pass <Password> -ip <Router's IP> -port <Port>\t\t//Создать новое подключение")
-	fmt.Println("\nbkp: [-login <Username>]  [-ip <Router's IP>]\t\t\t\t\t\t\t\t\t\t//Сделать принудительный BackUp")
-	fmt.Println("\n----------------------------------------------------------------------------------------------")
-}
+//**************************************************************
+//----------------------DATA.JSON-------------------------------
+// getData : Функция, загружающая информацию с файла path.Json && connection.Json
+func getData(path string) [2]string {
+	//	str[0] - info for connection to sql.BD
+	//	str[1] - path to backup's save zone
 
-// startProgram : Функция, которая запускает программу в режиме службы
-func startProgram() {
-	fmt.Println("Программа успешно запущена!")
-}
+	data := "data.json"
 
-// stopProgram : Функция, останавливающая работу программы.
-func stopProgram() {
-	fmt.Println("Программа успешно остановлена!")
-}
-
-// timeSetup : Функция, задающая таймер создания BackUp-файла
-func timeSetup(time string, ip string) {
-	fmt.Println("----------------------------------------------------------------------------------------------")
-	fmt.Println("Время успешно изменено!")
-	fmt.Print("Новое время: ", time)
-	if ip != "" {
-		fmt.Print(" для ", ip)
+	var str [2]string
+	file, err := os.Open(path + data)
+	if err != nil {
+		fmt.Println("Не удалось открыть файл data.json")
 	}
-	fmt.Println("\n----------------------------------------------------------------------------------------------")
+	defer file.Close()
+	f := bufio.NewReader(file)
+	for i := 0; i < len(str); i++ {
+		str[i], _ = f.ReadString('\n')
+	}
+	//fmt.Println(str[0])
+	//fmt.Println(str[1])
+	return str
 }
 
-// newConnection : Функция, создающая новое подключение к роутеру
+//**************************************************************
+//-------------------NEW CONNECTION(ROUTER)---------------------
+// newConnection : Функция, создающая новое подключение к роутеру -- Изменить! Добавить!
 func newConnection(r Router, name string, hostname string, ip string, login string, port int, pass string) {
 	r.name = name
 	r.host = hostname
@@ -437,18 +468,50 @@ func newConnection(r Router, name string, hostname string, ip string, login stri
 	fmt.Println("----------------------------------------------------------------------------------------------")
 	fmt.Println("\nРоутер\t", name, "\t", hostname, "\t", ip, "\t", login, "\t", pass, "\t", port, "\t\tбыл добавлен")
 	fmt.Println("\n----------------------------------------------------------------------------------------------")
-	Arr[index] = r
-	index++
 }
 
-// routerPrint : Функция-принтер для Router
+/*// routerPrint : Функция-принтер для Router -- Изменить! Добавить!
 func routerPrint(r Router, i int) {
 	fmt.Println("#", i, "\tName: ", r.name, "\tHost: ", r.host, "\tLogin: ", r.login, "\tPassword: ", r.pass, "\tIp: ", r.ip, "\tPort: ", r.port)
+}*/
+
+//***************************************************************
+//----------------------Type Of BackUps--------------------------
+
+//***************************************************************
+
+// makeAllBackUp : -make -all -bkp
+func makeAllBackUp(params [2]string) {
+	//Снятие полных бэкапов со всех роутеров
+
+	//dbconfig := params[0]
+	//savepath := params[1]
+
 }
 
-// printArr : Функция-принтер для массива
-func printArr() {
-	for i := 0; i < index || i < len(Arr); i++ {
-		routerPrint(Arr[i], i)
-	}
+// makeBackUp : -make -bkp <names>
+func makeBackUp(params [2]string) {
+	//Снятие бэкапов с перечисленных роутеров
+
+	//dbconfig := params[0]
+	//savepath := params[1]
+
+}
+
+// makeAllConfig : -make -all
+func makeAllConfig(params [2]string) {
+	//Снятие конфигов со всех роутеров
+
+	//dbconfig := params[0]
+	//savepath := params[1]
+
+}
+
+// makeConfig : -make <names>
+func makeConfig(params [2]string) {
+	//Снятие конфигов с перечисленных роутеров
+
+	//dbconfig := params[0]
+	//savepath := params[1]
+
 }
