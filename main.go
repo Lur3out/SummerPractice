@@ -41,9 +41,9 @@ import (
 
 // Router :: class for Router type -- Изменить!
 type Router struct {
-	num   int
-	name  string
-	host  string
+	num  int
+	name string
+	//host  string
 	login string
 	pass  string
 	ip    string
@@ -442,42 +442,6 @@ func addNewRouter(r Router, settings string) {
 	}
 	fmt.Println("last inserted id =", lastInsertID)
 
-	add, err := db.Prepare("update test set name=$1, ip=$2, port=$3, login=$4, pass=$5 where test_id=$6")
-	if err != nil {
-		fmt.Println("Prepare error #373 string")
-	}
-
-	res, err := add.Exec(r.name, r.ip, r.port, r.login, r.pass, 1)
-	if err != nil {
-		fmt.Println("Exec error #377 string")
-	}
-	affect, err := res.RowsAffected()
-	if err != nil {
-		fmt.Println("RowsAffected error #227 string")
-	}
-
-	fmt.Println(affect, "rows changed")
-	/*
-		rows, err := db.Query("SELECT * FROM test")
-		if err != nil {
-			fmt.Println("Query error #237 string")
-		}
-
-		for rows.Next() {
-			var testid int
-			var r Router
-			name := r.name
-			ip := r.ip
-			port := r.port
-			login := r.login
-			pass := r.pass
-			err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
-			if err != nil {
-				fmt.Println("Scan error #408 string")
-			}
-
-		}
-	*/
 	defer db.Close()
 }
 
@@ -597,6 +561,40 @@ func deleteRow(index int, settings string) {
 	fmt.Println(affect, "rows changed")
 }
 
+// AllConnected : Функция, выводящая все подключенные роутеры
+func routerData(db *sql.DB) Router {
+	var r Router
+	rows, err := db.Query("SELECT * FROM test")
+	if err != nil {
+		fmt.Println("Query error #452 string")
+	}
+
+	for rows.Next() {
+		var testid int
+		name := ""
+		ip := ""
+		port := 0
+		login := ""
+		pass := ""
+		err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
+		if err != nil {
+			fmt.Println("Scan error #464 string")
+		}
+		fmt.Println("test_id | name | ip | port | login | pass")
+		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
+
+		r.num = testid
+		r.name = name
+		r.ip = ip
+		r.port = port
+		r.login = login
+		r.pass = pass
+
+	}
+	defer db.Close()
+	return r
+}
+
 //**************************************************************
 //----------------------MD5 u SHA-1-----------------------------
 
@@ -711,26 +709,26 @@ func getData(path string) [2]string {
 // newConnection : Функция, создающая новое подключение к роутеру -- Изменить! Добавить!
 func newConnection(r Router, name string, hostname string, ip string, login string, port int, pass string, params [2]string) {
 	r.name = name
-	r.host = hostname
+	//r.host = hostname
 	r.ip = ip
 	r.login = login
 	r.port = port
 	r.pass = pass
 	fmt.Println("----------------------------------------------------------------------------------------------")
-	fmt.Println("\nРоутер\t", r.name, "\t", r.host, "\t", r.ip, "\t", r.login, "\t", r.pass, "\t", r.port, "\t\tбыл добавлен")
+	fmt.Println("\nРоутер\t", r.name, "\t", r.ip, "\t", r.login, "\t", r.pass, "\t", r.port, "\t\tбыл добавлен")
 	fmt.Println("\n----------------------------------------------------------------------------------------------")
 	//SQL-Adding
 	//test(r, params[0])
 
-	//addNewRouter(r, params[0])
+	addNewRouter(r, params[0])
 	printAllConnected(connectDB(params[0]))
-	//deleteRow(1, params[0])
+	//deleteRow(12, params[0])
 
 }
 
 // routerPrint : Функция-принтер для Router -- Изменить! Добавить!
 func routerPrint(r Router, i int) {
-	fmt.Println("#", i, "\tName: ", r.name, "\tHost: ", r.host, "\tLogin: ", r.login, "\tPassword: ", r.pass, "\tIp: ", r.ip, "\tPort: ", r.port)
+	fmt.Println("#", i, "\tName: ", r.name, "\tLogin: ", r.login, "\tPassword: ", r.pass, "\tIp: ", r.ip, "\tPort: ", r.port)
 }
 
 //***************************************************************
@@ -742,7 +740,10 @@ func makeAllBackUp(params [2]string, ip string, port int, login string, pass str
 	//dbconfig := params[0]
 	//savepath := params[1]
 
-	sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
+	r := routerData(connectDB(params[0]))
+	//routerPrint(r, r.num)
+
+	sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
 
 }
 
@@ -753,7 +754,7 @@ func makeBackUp(params [2]string, ip string, port int, login string, pass string
 	//dbconfig := params[0]
 	//savepath := params[1]
 
-	sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
+	//sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
 }
 
 // makeAllConfig : -make -all
@@ -763,7 +764,9 @@ func makeAllConfig(params [2]string, ip string, port int, login string, pass str
 	//dbconfig := params[0]
 	//savepath := params[1]
 
-	sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
+	r := routerData(connectDB(params[0]))
+
+	sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
 }
 
 // makeConfig : -make <names>
@@ -773,7 +776,7 @@ func makeConfig(params [2]string, ip string, port int, login string, pass string
 	//dbconfig := params[0]
 	//savepath := params[1]
 
-	sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
+	//sftpRouter(sshRouter(login, pass, ip, port), bkp, params[1])
 }
 
 //***************************************************************
