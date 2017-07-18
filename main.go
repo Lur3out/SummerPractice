@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 //  ►Сделать три таблицы: роутеры+конфиги, хэши бэкапов+хэши конфигов, бэкапы+конфиги
 //
 //  ►Сделать флаг -bkp :: bool для снятия только бэкапа(если отсутствует - то снимается конфиг)
@@ -14,11 +13,9 @@
 //  ►Так же добавь в таблицу поле-флаг. Конфигурация или бекап.
 //	Сделать экспорт бэкапа из БД по имени и дате
 //	►Сделать флаг просмотра подключенных роутеров
-//
-//
+//-------------------------------------------
+// UPD:  сделать флаг просмотра, сделать все makeArg, сделать экспорт из БД по имени  и времени.
 
-=======
->>>>>>> master
 package main
 
 import (
@@ -36,8 +33,6 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
-
-	"io/ioutil"
 
 	_ "github.com/lib/pq"
 )
@@ -67,7 +62,9 @@ func main() {
 	makeArg := flag.Bool("make", false, "a boolean")      // Снятие бэкапа
 	pathArg := flag.String("path", "./", "a string")      // Указывает путь на data.json
 	lsArg := flag.Bool("ls", false, "a boolean")          // Выводит список подключенных роутеров
-	flag.Args()                                           // Имена роутеров, работает только после флага.
+	// timeArg:=
+	// dateArg :=
+	flag.Args() // Имена роутеров, работает только после флага.
 
 	flag.Parse()
 
@@ -86,33 +83,29 @@ func main() {
 		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg, params)
 		fmt.Println()
 	}
-
+	// Сделать makeArg
 	if *makeArg != false {
 		if *bkpArg != false {
 			if *allArg != false {
 				makeAllBackUp(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
 			}
-			makeBackUp(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg)
+			makeBackUp(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
 		}
 		if *allArg != false && *bkpArg == false {
 			makeAllConfig(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
 		}
 		if *bkpArg == false && *allArg == false {
-			makeConfig(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg)
+			makeConfig(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
 		}
 	}
 
 	if *lsArg != false {
-		//Дата + время
 		current := time.Now()
-		_date := current.Format("02.01.2006")
-		_time := current.Format("15:04")
-		fmt.Print(_date)
-		fmt.Println(" ", _time)
-		fmt.Println()
+		fmt.Println("Date: ", current.Format("02.01.2006"))
+		fmt.Println("Time: ", current.Format("15:04"))
 		printAllConnected(connectDB(params[0]))
-
 	}
+
 }
 
 //*************************************************************
@@ -130,7 +123,7 @@ func helpPrint() {
 //*************************************************************
 //-----------------------------SSH-----------------------------
 
-// sshClient : Функция, создающая ssh клиент -- Изменить!
+/*// sshClient : Функция, создающая ssh клиент -- Изменить!
 func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.Client {
 	config := &ssh.ClientConfig{
 		User: loginArg,
@@ -174,7 +167,7 @@ func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.
 	fmt.Print(string(c))
 
 	return client
-}
+}*/
 
 // sshRouter : Функция, возвращающая ssh-клиент для роутера
 func sshRouter(login string, pass string, ip string, port int) *ssh.Client {
@@ -225,7 +218,7 @@ func sshRouter(login string, pass string, ip string, port int) *ssh.Client {
 //*************************************************************
 //---------------------------SFTP------------------------------
 
-// sftpConnection : Функция, создающая sftp соединение и импортирующая BackUp файл -- Изменить!
+/*// sftpConnection : Функция, создающая sftp соединение и импортирующая BackUp файл -- Изменить!
 func sftpConnection(client *ssh.Client) {
 	sftp, err := sftp.NewClient(client)
 	if err != nil {
@@ -269,7 +262,7 @@ func sftpConnection(client *ssh.Client) {
 	srcFile.WriteTo(dstFile)
 	srcFile2.WriteTo(dstFile2)
 }
-
+*/
 // sftpRouter : Функция, создающая sftp соединение и экспортирующая backup\rsc.
 func sftpRouter(client *ssh.Client, bkp bool, path string) {
 	sftp, err := sftp.NewClient(client)
@@ -279,7 +272,7 @@ func sftpRouter(client *ssh.Client, bkp bool, path string) {
 	defer sftp.Close()
 
 	srcPath := "/"
-	dstPath := path
+	fmt.Println("Path:", path)
 	filename := "BackUp.backup"
 	config := "config.rsc"
 
@@ -293,9 +286,9 @@ func sftpRouter(client *ssh.Client, bkp bool, path string) {
 		defer srcFile.Close()
 
 		// Create the destination file
-		dstFile, err := os.Create(dstPath + filename)
+		dstFile, err := os.Create(path + filename)
 		if err != nil {
-			fmt.Printf("Failed to create destination file: %s", err)
+			panic(err) //fmt.Printf("ZDES'Failed to create destination file: %s", err)
 		}
 		defer dstFile.Close()
 
@@ -310,9 +303,9 @@ func sftpRouter(client *ssh.Client, bkp bool, path string) {
 		}
 		defer srcFile2.Close()
 
-		dstFile2, err := os.Create(dstPath + config)
+		dstFile2, err := os.Create(path + config)
 		if err != nil {
-			fmt.Printf("Failed to create destination file: %s", err)
+			fmt.Printf("ZDES'2Failed to create destination file: %s", err)
 		}
 		defer dstFile2.Close()
 		// Copy the file
@@ -324,7 +317,7 @@ func sftpRouter(client *ssh.Client, bkp bool, path string) {
 //*************************************************************
 //-------------------------SQL---------------------------------
 // sqlDB : Функция, создающая БД в PostgreSQL -- Изменить!
-func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
+/*func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 
 	// Подключение к БД
 	db, err := sql.Open("postgres", "user=backuper password=backup dbname=backup sslmode=disable")
@@ -431,7 +424,7 @@ func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
 
 	fmt.Println(affect, "rows changed")
 
-}
+}*/
 
 // connectDB : Функция, создающая подключение к PostgreSql по настройкам из файла data.json
 func connectDB(settings string) *sql.DB {
@@ -460,61 +453,82 @@ func addNewRouter(r Router, settings string) {
 	defer db.Close()
 }
 
-// addNewHash : Функция, добавляющая хэши нового бэкапа
-func addNewHash(md5 string, sha1 string, name string, set string, bkp bool) {
-
+// addNewHash : Функция, добавляющая хэши нового backup/rsc в БД
+func addNewHash(md5 string, sha1 string, name string, bkp bool, params [2]string) {
 	current := time.Now()
 	time := current.Format("15:04")
 	date := current.Format("02.01.2006")
 
-	db, err := sql.Open("postgres", set)
+	db, err := sql.Open("postgres", params[0])
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer db.Close()
 
 	if bkp == true {
 		var lastInsertID int
-		err = db.QueryRow("INSERT INTO hashs_test(date, name, md5bkp, sha1bkp, md5cfg, sha1cfg, time) VALUES($1,$2,$3,$4,$5,$6,$7) returning hash_id;", date, name, md5, sha1, "", "", time).Scan(&lastInsertID)
+		err = db.QueryRow("INSERT INTO hashs_test(date, time, name, md5bkp, sha1bkp, md5cfg, sha1cfg) VALUES($1,$2,$3,$4,$5,$6,$7) returning hash_id;", date, time, name, md5, sha1, "", "").Scan(&lastInsertID)
 		if err != nil {
-			panic(err) // fmt.Println("QueryRow err #471 string")
+			panic(err) // fmt.Println("QueryRow err # 471 string")
 		}
-		// fmt.Println("last inserted id =", lastInsertID)
 	} else {
 		var lastInsertID int
-		err = db.QueryRow("INSERT INTO hashs_test(date, name, md5bkp, sha1bkp, md5cfg, sha1cfg, time) VALUES($1,$2,$3,$4,$5,$6,$7) returning hash_id;", date, name, "", "", md5, sha1, time).Scan(&lastInsertID)
+		err = db.QueryRow("INSERT INTO hashs_test(date, time, name, md5bkp, sha1bkp, md5cfg sha1cfg) VALUES($1,$2,$3,$4,$5,$6,$7) returning hash_id;", date, time, name, "", "", md5, sha1).Scan(&lastInsertID)
 		if err != nil {
-			fmt.Println("QueryRow err #478 string")
+			fmt.Println("QueryRow err # 477 string")
 		}
-		// fmt.Println("last inserted id =", lastInsertID)
 	}
-	defer db.Close()
 
 }
 
-// addNewFile : Функция, добавляющая файл нового бэкапа
-func addNewFile(file []byte, set string, bkp bool) {
+// addNewFile : Функция, добавляющая новые файлы в БД
+func addNewFile(params [2]string, r Router, bkp bool) {
 	current := time.Now()
 	time := current.Format("15:04")
 	date := current.Format("02.01.2006")
 
-	db, err := sql.Open("postgres", set)
+	db, err := sql.Open("postgres", params[0])
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer db.Close()
 
 	if bkp == true {
-		var lastInsertID int
-		err = db.QueryRow("INSERT INTO backups_test(date, time, bkp, cfg) VALUES($1,$2,$3,$4) returning backup_id;", date, time, file, "").Scan(&lastInsertID)
+		file, err := os.Open(params[1] + "BackUp.backup")
 		if err != nil {
-			panic(err) // fmt.Println("QueryRow err #498 string")
+			fmt.Println("#499 string")
 		}
-		// fmt.Println("last inserted id =", lastInsertID)
+		fileInfo, _ := file.Stat()
+		fileSize := fileInfo.Size()
+		bytes := make([]byte, fileSize)
+
+		var lastInsertID int
+		err = db.QueryRow("INSERT INTO backups_test(date, time, name, bkp, cfg) VALUES($1,$2,$3,$4,$5) returning backup_id;", date, time, r.name, bytes, "").Scan(&lastInsertID)
+		if err != nil {
+			panic(err) // fmt.Println("QueryRow err # 508 string")
+		}
+
 	} else {
-		var lastInsertID int
-		err = db.QueryRow("INSERT INTO backups_test(date, time, bkp, cfg) VALUES($1,$2,$3,$4) returning backup_id;", date, time, "", file).Scan(&lastInsertID)
+		file, err := os.Open(params[1] + "config.rsc")
 		if err != nil {
-			fmt.Println("QueryRow err #505 string")
+			fmt.Println("#514 string")
 		}
-		// fmt.Println("last inserted id =", lastInsertID)
+		fileInfo, _ := file.Stat()
+		fileSize := fileInfo.Size()
+		bytes := make([]byte, fileSize)
+
+		var lastInsertID int
+		err = db.QueryRow("INSERT INTO backupss_test(date, time, name, bkp, cfg) VALUES($1,$2,$3,$4,$5) returning backup_id;", date, time, r.name, "", bytes).Scan(&lastInsertID)
+		if err != nil {
+			fmt.Println("QueryRow err # 523 string")
+		}
+
 	}
-	defer db.Close()
 }
 
-// test : TEST
+/*// test : TEST
 func test(r Router, settings string) {
 	// Подключение к БД
 	db, err := sql.Open("postgres", settings)
@@ -588,7 +602,7 @@ func test(r Router, settings string) {
 	}
 
 	fmt.Println(affect, "rows changed")
-}
+}*/
 
 // printAllConnected : Функция, выводящая все подключенные роутеры
 func printAllConnected(db *sql.DB) {
@@ -630,7 +644,7 @@ func deleteRow(index int, settings string) {
 	fmt.Println(affect, "rows changed")
 }
 
-// routerData : Функция, создающая .backup\config всех подключенных роутеров.
+// AllConnected : Функция, создающая бэкапы для всех роутеров
 func routerData(db *sql.DB, bkp bool, params [2]string) {
 	var r Router
 	rows, err := db.Query("SELECT * FROM test")
@@ -640,9 +654,6 @@ func routerData(db *sql.DB, bkp bool, params [2]string) {
 
 	for rows.Next() {
 		var testid int
-		path := params[1]
-		set := params[0]
-
 		name := ""
 		ip := ""
 		port := 0
@@ -662,70 +673,71 @@ func routerData(db *sql.DB, bkp bool, params [2]string) {
 		r.login = login
 		r.pass = pass
 
-		//Получение backup/rsc с роутера по полученным данным
-		sftpRouter(sshRouter(login, pass, ip, port), bkp, path)
-		//Занесение в БД хэшей и backup/config
-		sqlRouter(bkp, path, r, set)
+		sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
+		sqlRouter(params, r, bkp)
 
 	}
 	defer db.Close()
 }
 
-// sqlRouter : Функция добавляющая данные в БД(хэши и файлы)
-func sqlRouter(bkp bool, path string, r Router, set string) {
+// sqlRouter : Функция добавляющая хэш и файлы в БД
+func sqlRouter(params [2]string, r Router, bkp bool) {
 	if bkp == true {
-		//Добавление .backup
-		file, err := os.Open(path + "BackUp.backup")
-		if err != nil {
-			fmt.Println("Не удалось открыть файл # 605 string")
-		}
-		defer file.Close()
-
-		md5 := hashMD5Bkp(path)
-		sha1 := hashSHA1Bkp(path)
-
-		fileInfo, _ := file.Stat()
-		fileSize := fileInfo.Size()
-		//file :: bytea
-		filebytes := make([]byte, fileSize)
-
-		//Sql: hash
-		addNewHash(md5, sha1, r.name, set, bkp)
-
-		//Sql: file
-		addNewFile(filebytes, set, bkp)
-
+		addNewHash(hashMD5Bkp(params[1]), hashSHA1Bkp(params[1]), r.name, bkp, params)
+		addNewFile(params, r, bkp)
 	} else {
-		//Добавление .rsc
-
-		file, err := os.Open(path + "config.rsc")
-		if err != nil {
-			fmt.Println("Не удалось открыть файл # 614 string")
-		}
-		defer file.Close()
-
-		md5 := hashMD5Cfg(path)
-		sha1 := hashSHA1Cfg(path)
-
-		fileInfo, _ := file.Stat()
-		fileSize := fileInfo.Size()
-		//file :: bytea
-		filebytes := make([]byte, fileSize)
-
-		//Sql: hash
-		addNewHash(md5, sha1, r.name, set, bkp)
-
-		//Sql: file
-		addNewFile(filebytes, set, bkp)
+		addNewHash(hashMD5Cfg(params[1]), hashSHA1Cfg(params[1]), r.name, bkp, params)
+		addNewFile(params, r, bkp)
 	}
+}
+
+// routerDataNm : Функция, создающая бэкапы по именам роутеров
+func routerDataNm(db *sql.DB, bkp bool, params [2]string, names []string) {
+	var r Router
+	rows, err := db.Query("SELECT * FROM test")
+	if err != nil {
+		fmt.Println("Query error #452 string")
+	}
+
+	for rows.Next() {
+		var testid int
+		name := ""
+		ip := ""
+		port := 0
+		login := ""
+		pass := ""
+		err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
+		if err != nil {
+			fmt.Println("Scan error #464 string")
+		}
+		fmt.Println("test_id | name | ip | port | login | pass")
+		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
+
+		r.num = testid
+		r.name = name
+		r.ip = ip
+		r.port = port
+		r.login = login
+		r.pass = pass
+
+		for i := 0; i < len(names); i++ {
+			if names[i] == name {
+				sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
+				sqlRouter(params, r, bkp)
+			}
+		}
+		sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
+		sqlRouter(params, r, bkp)
+
+	}
+	defer db.Close()
 }
 
 //**************************************************************
 //----------------------MD5 u SHA-1-----------------------------
 
 // hashMD5Bkp : Функция, создающая hash MD5 BackUp.backup
-func hashMD5Bkp(_path string) string {
-	path := _path
+func hashMD5Bkp(path string) string {
 	backup := "BackUp.backup"
 
 	backupFile, err := os.Open(path + backup)
@@ -744,8 +756,7 @@ func hashMD5Bkp(_path string) string {
 }
 
 // hashMD5Cfg : Функция, создающая hash MD5 config.rsc
-func hashMD5Cfg(_path string) string {
-	path := _path
+func hashMD5Cfg(path string) string {
 	config := "config.rsc"
 
 	configFile, err := os.Open(path + config)
@@ -764,9 +775,7 @@ func hashMD5Cfg(_path string) string {
 }
 
 // hashSHA1Bkp : Функция, создающая hash SHA1 BackUp.backup
-func hashSHA1Bkp(_path string) string {
-
-	path := _path
+func hashSHA1Bkp(path string) string {
 	backup := "BackUp.backup"
 
 	backupFile, err := os.Open(path + backup)
@@ -785,9 +794,7 @@ func hashSHA1Bkp(_path string) string {
 }
 
 // hashSHA1Cfg : Функция, создающая hash SHA1 config.rsc
-func hashSHA1Cfg(_path string) string {
-
-	path := _path
+func hashSHA1Cfg(path string) string {
 	config := "config.rsc"
 
 	configFile, err := os.Open(path + config)
@@ -824,8 +831,7 @@ func getData(path string) [2]string {
 	for i := 0; i < len(str); i++ {
 		str[i], _ = f.ReadString('\n')
 	}
-	//fmt.Println(str[0])
-	//fmt.Println(str[1])
+	// fmt.Println(str[1])
 	return str
 }
 
@@ -846,8 +852,8 @@ func newConnection(r Router, name string, hostname string, ip string, login stri
 	//test(r, params[0])
 
 	addNewRouter(r, params[0])
-	// printAllConnected(connectDB(params[0]))
-	// deleteRow(12, params[0])
+	//printAllConnected(connectDB(params[0]))
+	//deleteRow(12, params[0])
 
 }
 
@@ -861,41 +867,27 @@ func routerPrint(r Router, i int) {
 // makeAllBackUp : -make -all -bkp
 func makeAllBackUp(params [2]string, ip string, port int, login string, pass string, bkp bool, names []string) {
 	//Снятие полных бэкапов со всех роутеров
-
-	//dbconfig := params[0]
-	//savepath := params[1]
-
 	routerData(connectDB(params[0]), bkp, params)
 }
 
 // makeBackUp : -make -bkp <names>
-func makeBackUp(params [2]string, ip string, port int, login string, pass string, bkp bool) {
+func makeBackUp(params [2]string, ip string, port int, login string, pass string, bkp bool, names []string) {
 	//Снятие бэкапов с перечисленных роутеров
 
-	//dbconfig := params[0]
-	//savepath := params[1]
-
-	//sftpRouter(sshRouter(login, pass, ip, port), bkp, params)
+	routerDataNm(connectDB(params[0]), bkp, params, names)
 }
 
 // makeAllConfig : -make -all
 func makeAllConfig(params [2]string, ip string, port int, login string, pass string, bkp bool, names []string) {
 	//Снятие конфигов со всех роутеров
-
-	//dbconfig := params[0]
-	//savepath := params[1]
-
 	routerData(connectDB(params[0]), bkp, params)
 }
 
 // makeConfig : -make <names>
-func makeConfig(params [2]string, ip string, port int, login string, pass string, bkp bool) {
+func makeConfig(params [2]string, ip string, port int, login string, pass string, bkp bool, names []string) {
 	//Снятие конфигов с перечисленных роутеров
 
-	//dbconfig := params[0]
-	//savepath := params[1]
-
-	//sftpRouter(sshRouter(login, pass, ip, port), bkp, params)
+	routerDataNm(connectDB(params[0]), bkp, params, names)
 }
 
 //***************************************************************
