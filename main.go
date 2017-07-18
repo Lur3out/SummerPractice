@@ -13,8 +13,8 @@
 //  ►Так же добавь в таблицу поле-флаг. Конфигурация или бекап.
 //	Сделать экспорт бэкапа из БД по имени и дате
 //	►Сделать флаг просмотра подключенных роутеров
-//-------------------------------------------
-// UPD:  сделать флаг просмотра, сделать все makeArg, сделать экспорт из БД по имени  и времени.
+//  Сделать просмотр всех бэкапов по имени
+//
 
 package main
 
@@ -55,16 +55,18 @@ func main() {
 	newArg := flag.Bool("new", false, "a boolean")        // Создает новое подключение к роутеру
 	loginArg := flag.String("login", "admin", "a string") // Задает логин для подключения к роутеру
 	passArg := flag.String("pass", "", "a string")        // Задает пароль для подключения к роутеру
-	nameArg := flag.String("name", "Unknown", "a string") // Задает псеводним роутера
+	nameArg := flag.String("name", "Unknown", "a string") // Задает псеводним роутера/список бэкапов/экспорт бэкапа
 	hostArg := flag.String("host", "Default", "a string") // Задает хостнейм роутера
 	portArg := flag.Int("port", 22, "an int")             // Задает порт SSH соединения
 	bkpArg := flag.Bool("bkp", false, "a boolean")        // Включает снятие бэкапов
 	makeArg := flag.Bool("make", false, "a boolean")      // Снятие бэкапа
 	pathArg := flag.String("path", "./", "a string")      // Указывает путь на data.json
 	lsArg := flag.Bool("ls", false, "a boolean")          // Выводит список подключенных роутеров
-	// timeArg:=
-	// dateArg :=
-	flag.Args() // Имена роутеров, работает только после флага.
+	timeArg := flag.String("time", "20:24", "a string")   // Задает время для экспорта
+	dateArg := flag.String("date", "18.07.2017", "a str") // Задает дату для экспорта
+	getArg := flag.Bool("get", false, "a boolean")        // Экспортирует бэкап
+	lsroutArg := flag.Bool("lsrout", false, "a boolean")  // Выводит список бэкапов по имени
+	flag.Args()                                           // Имена роутеров, работает только после флага.
 
 	flag.Parse()
 
@@ -88,8 +90,9 @@ func main() {
 		if *bkpArg != false {
 			if *allArg != false {
 				makeAllBackUp(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
+			} else {
+				makeBackUp(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
 			}
-			makeBackUp(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
 		}
 		if *allArg != false && *bkpArg == false {
 			makeAllConfig(params, *ipArg, *portArg, *loginArg, *passArg, *bkpArg, names)
@@ -104,6 +107,14 @@ func main() {
 		fmt.Println("Date: ", current.Format("02.01.2006"))
 		fmt.Println("Time: ", current.Format("15:04"))
 		printAllConnected(connectDB(params[0]))
+	}
+
+	if *lsroutArg != false {
+		listRout(*nameArg, params)
+	}
+
+	if *getArg != false {
+		getBack(*nameArg, *dateArg, *timeArg)
 	}
 
 }
@@ -272,7 +283,6 @@ func sftpRouter(client *ssh.Client, bkp bool, path string) {
 	defer sftp.Close()
 
 	srcPath := "/"
-	fmt.Println("Path:", path)
 	filename := "BackUp.backup"
 	config := "config.rsc"
 
@@ -470,7 +480,7 @@ func addNewHash(md5 string, sha1 string, name string, bkp bool, params [2]string
 		var lastInsertID int
 		err = db.QueryRow("INSERT INTO hashs_test(date, time, name, md5bkp, sha1bkp, md5cfg, sha1cfg) VALUES($1,$2,$3,$4,$5,$6,$7) returning hash_id;", date, time, name, md5, sha1, "", "").Scan(&lastInsertID)
 		if err != nil {
-			panic(err) // fmt.Println("QueryRow err # 471 string")
+			fmt.Println("QueryRow err # 471 string")
 		}
 	} else {
 		var lastInsertID int
@@ -507,7 +517,7 @@ func addNewFile(params [2]string, r Router, bkp bool) {
 		var lastInsertID int
 		err = db.QueryRow("INSERT INTO backups_test(date, time, name, bkp, cfg) VALUES($1,$2,$3,$4,$5) returning backup_id;", date, time, r.name, bytes, "").Scan(&lastInsertID)
 		if err != nil {
-			panic(err) // fmt.Println("QueryRow err # 508 string")
+			fmt.Println("QueryRow err # 508 string")
 		}
 
 	} else {
@@ -663,6 +673,7 @@ func routerData(db *sql.DB, bkp bool, params [2]string) {
 		if err != nil {
 			fmt.Println("Scan error #464 string")
 		}
+
 		fmt.Println("test_id | name | ip | port | login | pass")
 		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
 
@@ -682,6 +693,7 @@ func routerData(db *sql.DB, bkp bool, params [2]string) {
 
 // sqlRouter : Функция добавляющая хэш и файлы в БД
 func sqlRouter(params [2]string, r Router, bkp bool) {
+	//fmt.Println(bkp)
 	if bkp == true {
 		addNewHash(hashMD5Bkp(params[1]), hashSHA1Bkp(params[1]), r.name, bkp, params)
 		addNewFile(params, r, bkp)
@@ -729,6 +741,39 @@ func routerDataNm(db *sql.DB, bkp bool, params [2]string, names []string) {
 		sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
 		sqlRouter(params, r, bkp)
 
+	}
+	defer db.Close()
+}
+
+// listRout : Функция, выводящая все сделанные бэкапы(по хэшам) по имени роутера
+func listRout(name string, params [2]string) {
+	db, err := sql.Open("postgres", params[0])
+	if err != nil {
+		fmt.Println("#745")
+	}
+
+	cmd := "SELECT * FROM hashs_test WHERE name LIKE '" + name + "'"
+	rows, err := db.Query(cmd)
+	if err != nil {
+		panic(err) // fmt.Println("Query error #751 string")
+	}
+
+	for rows.Next() {
+		var hashid int
+		name := ""
+		date := ""
+		time := ""
+		md5bkp := ""
+		sha1bkp := ""
+		md5cfg := ""
+		sha1cfg := ""
+		err = rows.Scan(&hashid, &name, &date, &time, &md5bkp, &sha1bkp, &md5cfg, &sha1cfg)
+		if err != nil {
+			panic(err) // fmt.Println("Scan error #464 string")
+		}
+
+		fmt.Println("hash_id | name | date | time | MD5 BackUp| SHA-1 BackUp | MD5 config | SHA-1 config")
+		fmt.Printf("%3v | %8v | %8v | %4v | %8v | %8v | %8v | %8v\n", hashid, name, date, time, md5bkp, sha1bkp, md5cfg, sha1cfg)
 	}
 	defer db.Close()
 }
@@ -831,7 +876,7 @@ func getData(path string) [2]string {
 	for i := 0; i < len(str); i++ {
 		str[i], _ = f.ReadString('\n')
 	}
-	// fmt.Println(str[1])
+
 	return str
 }
 
@@ -891,3 +936,4 @@ func makeConfig(params [2]string, ip string, port int, login string, pass string
 }
 
 //***************************************************************
+//--------------------------GET BACK-----------------------------
