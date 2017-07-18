@@ -327,7 +327,7 @@ func printAllConnected(db *sql.DB) {
 	}
 
 	for rows.Next() {
-		var testid int
+		var routerid int
 		name := ""
 		ip := ""
 		port := 0
@@ -417,7 +417,7 @@ func routerDataNm(db *sql.DB, bkp bool, params [2]string, names []string) {
 	}
 
 	for rows.Next() {
-		var router int
+		var routerid int
 		name := ""
 		ip := ""
 		port := 0
