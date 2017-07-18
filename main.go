@@ -1,21 +1,3 @@
-//  ►Сделать три таблицы: роутеры+конфиги, хэши бэкапов+хэши конфигов, бэкапы+конфиги
-//
-//  ►Сделать флаг -bkp :: bool для снятия только бэкапа(если отсутствует - то снимается конфиг)
-//  ►Сделать массив входящих параметров=имена роутеров, с которых снять бэкапы, имена сверяются с именами из БД
-//  ►Сделать флаг -all снятия бэкапа со всех роутеров из БД
-//
-//  ►Подключение к базе вынести в Json
-//  ►Временную папку для файлов туда же
-//  ►Информацию для подключения к роутерам в базу.
-//  ►Процесс снятия конфигурации отделить от процесса снятия бекапа
-//  ►В таблицах. Хранить бекапы и конфигурации в одной таблице, хеши в другой!
-//  ►Добавить в таблицу хешей время создания и имя роутера.
-//  ►Так же добавь в таблицу поле-флаг. Конфигурация или бекап.
-//	Сделать экспорт бэкапа из БД по имени и дате
-//	►Сделать флаг просмотра подключенных роутеров
-//  Сделать просмотр всех бэкапов по имени
-//
-
 package main
 
 import (
@@ -26,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -39,9 +22,8 @@ import (
 
 // Router :: class for Router type -- Изменить!
 type Router struct {
-	num  int
-	name string
-	//host  string
+	num   int
+	name  string
 	login string
 	pass  string
 	ip    string
@@ -79,13 +61,12 @@ func main() {
 		helpPrint()
 	}
 
-	// Изменить!
 	if *newArg != false {
 		var r Router
 		newConnection(r, *nameArg, *hostArg, *ipArg, *loginArg, *portArg, *passArg, params)
 		fmt.Println()
 	}
-	// Сделать makeArg
+
 	if *makeArg != false {
 		if *bkpArg != false {
 			if *allArg != false {
@@ -114,7 +95,7 @@ func main() {
 	}
 
 	if *getArg != false {
-		getBack(*nameArg, *dateArg, *timeArg)
+		getBack(*nameArg, *dateArg, *timeArg, params, *bkpArg)
 	}
 
 }
@@ -126,6 +107,9 @@ func helpPrint() {
 	fmt.Print("----------------------------------------------------------------------------------------------")
 	fmt.Println("\nAllowed commands:")
 	fmt.Println("\npath:  <Path to data.json>\t\t\t\t\t\t\t\t\t\t\t\t\t// Укажите путь к файлу data.json в формате <Disk>:/~/")
+	fmt.Println("\nget: [-bkp] -name <Router's name> -date <dd.mm.yyyy> -time <hh:mm>\t\t\t\t\t\t\t\t//Выбор конфига/бэкапа для экспорта")
+	fmt.Println("\nls: \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t//Выводит список подключенных роутеров.")
+	fmt.Println("\nlsrout: -name <Router's name>\t\t\t\t\t\t\t\t\t\t\t\t\t//Выводит список бэкапов для роутера с именем <Name>")
 	fmt.Println("\nnew: -name <Router's name> -host <Hostname> -login <Username> -pass <Password> -ip <Router's IP> -port <Port>\t\t//Создать новое подключение")
 	fmt.Println("\nmake: [-bkp ] [-all] <Routers' names>\t\t\t\t\t\t\t\t\t\t\t\t//Запуск процедуры снятия бэкапов.\n\n\nАтрибуты:\n\n-bkp\t\t\tПри указании атрибута произведется снятие полного бэкапа. По умолчанию снимается конфигурационный файл.\n\n-all\t\t\tПри указании снимаются бэкапы/конфиги со всех роутеров, подключенных к прогамме\n\n\nВходящие параметры:\n\n<Routers' names>\tЧерез пробел перечилите названия роутеров, с которых произвести снятие бэкапа. При наличии атрибута -all снятие будет произведено со всех.")
 	fmt.Println("\n----------------------------------------------------------------------------------------------")
@@ -133,52 +117,6 @@ func helpPrint() {
 
 //*************************************************************
 //-----------------------------SSH-----------------------------
-
-/*// sshClient : Функция, создающая ssh клиент -- Изменить!
-func sshClient(loginArg string, passArg string, ipArg string, portArg int) *ssh.Client {
-	config := &ssh.ClientConfig{
-		User: loginArg,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(passArg),
-		},
-		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-			return nil
-		},
-	}
-
-	addr := fmt.Sprintf("%s:%d", ipArg, portArg)
-	client, err := ssh.Dial("tcp", addr, config)
-	if err != nil {
-		fmt.Printf("Failed to dial: %s", err)
-	}
-	fmt.Println("Successfully connected to ", ipArg, ":", portArg)
-
-	session, err := client.NewSession()
-	if err != nil {
-		fmt.Printf("Failed to create a new session: %s", err)
-	}
-	defer session.Close()
-
-	session2, err := client.NewSession()
-	if err != nil {
-		fmt.Printf("Failed to create a new session: %s", err)
-	}
-	defer session2.Close()
-
-	b, err := session.CombinedOutput("/system backup save name=BackUp dont-encrypt=yes") // /system backup save name=BackUp dont-encrypt=yes
-	if err != nil {
-		fmt.Printf("Failed to send output command: %s", err)
-	}
-	fmt.Print(string(b))
-
-	c, err := session2.CombinedOutput("/export file=config.rsc") // /export file=config.rsc
-	if err != nil {
-		fmt.Printf("Failed to send output command: %s", err)
-	}
-	fmt.Print(string(c))
-
-	return client
-}*/
 
 // sshRouter : Функция, возвращающая ssh-клиент для роутера
 func sshRouter(login string, pass string, ip string, port int) *ssh.Client {
@@ -229,56 +167,11 @@ func sshRouter(login string, pass string, ip string, port int) *ssh.Client {
 //*************************************************************
 //---------------------------SFTP------------------------------
 
-/*// sftpConnection : Функция, создающая sftp соединение и импортирующая BackUp файл -- Изменить!
-func sftpConnection(client *ssh.Client) {
-	sftp, err := sftp.NewClient(client)
-	if err != nil {
-		fmt.Printf("Failed to create new sftp-client: %s", err)
-	}
-	defer sftp.Close()
-
-	srcPath := "/"
-	dstPath := "C:/Go/Projects/Test/BackUp/"
-	filename := "BackUp.backup"
-	config := "config.rsc"
-
-	// Open the source file
-	srcFile, err := sftp.Open(srcPath + filename)
-	if err != nil {
-		fmt.Printf("Failed to open backup file on router: %s", err)
-	}
-	defer srcFile.Close()
-
-	// Open the source file
-	srcFile2, err := sftp.Open(srcPath + config)
-	if err != nil {
-		fmt.Printf("Failed to open backup file on router: %s", err)
-	}
-	defer srcFile2.Close()
-
-	// Create the destination file
-	dstFile, err := os.Create(dstPath + filename)
-	if err != nil {
-		fmt.Printf("Failed to create destination file: %s", err)
-	}
-	defer dstFile.Close()
-
-	dstFile2, err := os.Create(dstPath + config)
-	if err != nil {
-		fmt.Printf("Failed to create destination file: %s", err)
-	}
-	defer dstFile2.Close()
-
-	// Copy the file
-	srcFile.WriteTo(dstFile)
-	srcFile2.WriteTo(dstFile2)
-}
-*/
 // sftpRouter : Функция, создающая sftp соединение и экспортирующая backup\rsc.
 func sftpRouter(client *ssh.Client, bkp bool, path string) {
 	sftp, err := sftp.NewClient(client)
 	if err != nil {
-		fmt.Printf("Failed to create new sftp-client: %s", err)
+		fmt.Printf("#172 Failed to create new sftp-client: %s", err)
 	}
 	defer sftp.Close()
 
@@ -291,14 +184,14 @@ func sftpRouter(client *ssh.Client, bkp bool, path string) {
 		// Open the source file
 		srcFile, err := sftp.Open(srcPath + filename)
 		if err != nil {
-			fmt.Printf("Failed to open backup file on router: %s", err)
+			fmt.Printf("#185 Failed to open backup file on router: %s", err)
 		}
 		defer srcFile.Close()
 
 		// Create the destination file
 		dstFile, err := os.Create(path + filename)
 		if err != nil {
-			panic(err) //fmt.Printf("ZDES'Failed to create destination file: %s", err)
+			fmt.Printf("#192 Failed to create destination file: %s", err)
 		}
 		defer dstFile.Close()
 
@@ -309,13 +202,13 @@ func sftpRouter(client *ssh.Client, bkp bool, path string) {
 		// Open the source file
 		srcFile2, err := sftp.Open(srcPath + config)
 		if err != nil {
-			fmt.Printf("Failed to open config file on router: %s", err)
+			fmt.Printf("#203 Failed to open config file on router: %s", err)
 		}
 		defer srcFile2.Close()
 
 		dstFile2, err := os.Create(path + config)
 		if err != nil {
-			fmt.Printf("ZDES'2Failed to create destination file: %s", err)
+			fmt.Printf("#209 Failed to create destination file: %s", err)
 		}
 		defer dstFile2.Close()
 		// Copy the file
@@ -326,115 +219,6 @@ func sftpRouter(client *ssh.Client, bkp bool, path string) {
 
 //*************************************************************
 //-------------------------SQL---------------------------------
-// sqlDB : Функция, создающая БД в PostgreSQL -- Изменить!
-/*func sqlDB(pmd5bkp string, psha1bkp string, pmd5cfg string, psha1cfg string) {
-
-	// Подключение к БД
-	db, err := sql.Open("postgres", "user=backuper password=backup dbname=backup sslmode=disable")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	bkp, err := os.Open("C:/Go/Projects/Test/BackUp/BackUp.backup")
-	if err != nil {
-		fmt.Println("Can't open BackUp.backup")
-	}
-	defer bkp.Close()
-	bkpInfo, _ := bkp.Stat()
-	bkpsize := bkpInfo.Size()
-	bkpbytes := make([]byte, bkpsize)
-
-	cfg, err := os.Open("C:/Go/Projects/Test/BackUp/config.rsc")
-	if err != nil {
-		fmt.Println("Can't open config.rsc")
-	}
-	defer cfg.Close()
-	cfgInfo, _ := cfg.Stat()
-	cfgsize := cfgInfo.Size()
-	cfgbytes := make([]byte, cfgsize)
-
-	var lastInsertID int
-	err = db.QueryRow("INSERT INTO backupinfo(md5_bkp, sha1_bkp, md5_cfg, sha1_cfg, bkp_file, cfg_file) VALUES($1,$2,$3,$4,$5,$6) returning backup_id;", "md5_BACKUP", "sha1_BACKUP", "md5_CONFIG", "sha1_CONFIG", "bkp_ByteA", "cfg_ByteA").Scan(&lastInsertID)
-	if err != nil {
-		fmt.Println("QueryRow err # 211 string")
-	}
-	fmt.Println("last inserted id =", lastInsertID)
-
-	fmt.Println("# Updating")
-	stmt, err := db.Prepare("update backupinfo set md5_bkp=$1, sha1_bkp=$2, md5_cfg=$3, sha1_cfg=$4, bkp_file=$5, cfg_file=$6 where backup_id=$7")
-	if err != nil {
-		fmt.Println("Prepare error #218 string")
-	}
-	res, err := stmt.Exec(pmd5bkp, psha1bkp, pmd5cfg, psha1cfg, bkpbytes, cfgbytes, lastInsertID)
-	if err != nil {
-		fmt.Println("Exec error #222 string")
-	}
-
-	affect, err := res.RowsAffected()
-	if err != nil {
-		fmt.Println("RowsAffected error #227 string")
-	}
-
-	fmt.Println(affect, "rows changed")
-
-	fmt.Println("# Querying")
-
-	rows, err := db.Query("SELECT * FROM backupinfo")
-	if err != nil {
-		fmt.Println("Query error #237 string")
-	}
-
-	for rows.Next() {
-		var backupid int
-		md5bkp := pmd5bkp
-		sha1bkp := psha1bkp
-		md5cfg := pmd5cfg
-		sha1cfg := psha1cfg
-		bkpfile := bkpbytes
-		cfgfile := cfgbytes
-		err = rows.Scan(&backupid, &md5bkp, &sha1bkp, &md5cfg, &sha1cfg, &bkpfile, &cfgfile)
-		if err != nil {
-			panic(err) //fmt.Println("Scan error #249 string")
-		}
-		fmt.Println("backup_id | md5_bkp | sha1_bkp | md5_cfg | sha1_cfg | bkp_file | cfg_file")
-		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %2v | %1v\n", backupid, md5bkp, sha1bkp, md5cfg, sha1cfg, bkpfile, cfgfile)
-		//**********Back to FILE from ByteArray
-		permissions := os.FileMode(0644)
-		bkpbyteArray := []byte("to be written to a file\n")
-		bkperr := ioutil.WriteFile("C:/Go/Projects/Test/BackUp/reversedBackUp.backup", bkpbyteArray, permissions)
-		if bkperr != nil {
-			fmt.Println("Не удалось конвертировать обратно файл")
-		}
-
-		cfgbyteArray := []byte("to be written to a file\n")
-		cfgerr := ioutil.WriteFile("C:/Go/Projects/Test/BackUp/reversed_config.rsc", cfgbyteArray, permissions)
-		if cfgerr != nil {
-			fmt.Println("Не удалось конвертировать обратно в файл")
-		}
-
-		//*************************************
-	}
-
-	//DELETING
-	fmt.Println("# Deleting")
-	stmt, err = db.Prepare("delete from backupinfo where backup_id=$1")
-	if err != nil {
-		fmt.Println("Prepare error #260 string")
-	}
-
-	res, err = stmt.Exec(lastInsertID)
-	if err != nil {
-		fmt.Println("Exec error #265 string")
-	}
-
-	affect, err = res.RowsAffected()
-	if err != nil {
-		fmt.Println("RowsAffected error #270 string")
-	}
-
-	fmt.Println(affect, "rows changed")
-
-}*/
 
 // connectDB : Функция, создающая подключение к PostgreSql по настройкам из файла data.json
 func connectDB(settings string) *sql.DB {
@@ -442,23 +226,20 @@ func connectDB(settings string) *sql.DB {
 	// Подключение к БД
 	db, err := sql.Open("postgres", settings)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("#227 sql.DB.Open()") // log.Fatal(err)
 	}
 	return db
 }
 
 // addNewRouter : Функция, добавляющая данные нового подключения в PostgreSql
 func addNewRouter(r Router, settings string) {
-	// db - sql.DB
-	//db := connectDB(settings)
 	db, err := sql.Open("postgres", settings)
 
 	var lastInsertID int
-	err = db.QueryRow("INSERT INTO test(name, ip, port, login, pass) VALUES($1,$2,$3,$4,$5) returning test_id;", r.name, r.ip, r.port, r.login, r.pass).Scan(&lastInsertID)
+	err = db.QueryRow("INSERT INTO routers(name, login, pass, ip, port) VALUES($1,$2,$3,$4,$5) returning routerid;", r.name, r.login, r.pass, r.ip, r.port).Scan(&lastInsertID)
 	if err != nil {
 		fmt.Println("QueryRow err #370 string")
 	}
-	fmt.Println("last inserted id =", lastInsertID)
 
 	defer db.Close()
 }
@@ -471,22 +252,22 @@ func addNewHash(md5 string, sha1 string, name string, bkp bool, params [2]string
 
 	db, err := sql.Open("postgres", params[0])
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("#253 sql.DB.Open()") // log.Fatal(err)
 	}
 
 	defer db.Close()
 
 	if bkp == true {
 		var lastInsertID int
-		err = db.QueryRow("INSERT INTO hashs_test(date, time, name, md5bkp, sha1bkp, md5cfg, sha1cfg) VALUES($1,$2,$3,$4,$5,$6,$7) returning hash_id;", date, time, name, md5, sha1, "", "").Scan(&lastInsertID)
+		err = db.QueryRow("INSERT INTO hashs(name, date, time, md5bkp, sha1bkp, md5cfg, sha1cfg) VALUES($1,$2,$3,$4,$5,$6,$7) returning hashid;", name, date, time, md5, sha1, "", "").Scan(&lastInsertID)
 		if err != nil {
-			fmt.Println("QueryRow err # 471 string")
+			fmt.Println("QueryRow err # 262 string")
 		}
 	} else {
 		var lastInsertID int
-		err = db.QueryRow("INSERT INTO hashs_test(date, time, name, md5bkp, sha1bkp, md5cfg sha1cfg) VALUES($1,$2,$3,$4,$5,$6,$7) returning hash_id;", date, time, name, "", "", md5, sha1).Scan(&lastInsertID)
+		err = db.QueryRow("INSERT INTO hashs(name, date, time, md5bkp, sha1bkp, md5cfg, sha1cfg) VALUES($1,$2,$3,$4,$5,$6,$7) returning hashid;", name, date, time, "", "", md5, sha1).Scan(&lastInsertID)
 		if err != nil {
-			fmt.Println("QueryRow err # 477 string")
+			fmt.Println("QueryRow err # 268 string")
 		}
 	}
 
@@ -500,7 +281,7 @@ func addNewFile(params [2]string, r Router, bkp bool) {
 
 	db, err := sql.Open("postgres", params[0])
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("#282 sql.DB.Open()")
 	}
 
 	defer db.Close()
@@ -508,115 +289,39 @@ func addNewFile(params [2]string, r Router, bkp bool) {
 	if bkp == true {
 		file, err := os.Open(params[1] + "BackUp.backup")
 		if err != nil {
-			fmt.Println("#499 string")
+			fmt.Println("#290 string")
 		}
 		fileInfo, _ := file.Stat()
 		fileSize := fileInfo.Size()
 		bytes := make([]byte, fileSize)
 
 		var lastInsertID int
-		err = db.QueryRow("INSERT INTO backups_test(date, time, name, bkp, cfg) VALUES($1,$2,$3,$4,$5) returning backup_id;", date, time, r.name, bytes, "").Scan(&lastInsertID)
+		err = db.QueryRow("INSERT INTO backups(name, date, time, bkp, cfg) VALUES($1,$2,$3,$4,$5) returning backupid;", r.name, date, time, bytes, "").Scan(&lastInsertID)
 		if err != nil {
-			fmt.Println("QueryRow err # 508 string")
+			fmt.Println("QueryRow err # 299 string")
 		}
 
 	} else {
 		file, err := os.Open(params[1] + "config.rsc")
 		if err != nil {
-			fmt.Println("#514 string")
+			fmt.Println("#305 string")
 		}
 		fileInfo, _ := file.Stat()
 		fileSize := fileInfo.Size()
 		bytes := make([]byte, fileSize)
 
 		var lastInsertID int
-		err = db.QueryRow("INSERT INTO backupss_test(date, time, name, bkp, cfg) VALUES($1,$2,$3,$4,$5) returning backup_id;", date, time, r.name, "", bytes).Scan(&lastInsertID)
+		err = db.QueryRow("INSERT INTO backups(name, date, time, bkp, cfg) VALUES($1,$2,$3,$4,$5) returning backupid;", r.name, date, time, "", bytes).Scan(&lastInsertID)
 		if err != nil {
-			fmt.Println("QueryRow err # 523 string")
+			fmt.Println("QueryRow err # 314 string")
 		}
 
 	}
 }
 
-/*// test : TEST
-func test(r Router, settings string) {
-	// Подключение к БД
-	db, err := sql.Open("postgres", settings)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var lastInsertID int
-	err = db.QueryRow("INSERT INTO test(name, ip, port, login, pass) VALUES($1,$2,$3,$4,$5) returning test_id;", r.name, r.ip, r.port, r.login, r.pass).Scan(&lastInsertID)
-	if err != nil {
-		panic(err) //fmt.Println("QueryRow err # 427 string")
-	}
-	fmt.Println("last inserted id =", lastInsertID)
-
-	fmt.Println("# Updating")
-	stmt, err := db.Prepare("update test set name=$1, ip=$2, port=$3, login=$4, pass=$5 where test_id=$6")
-	if err != nil {
-		fmt.Println("Prepare error #434 string")
-	}
-	res, err := stmt.Exec(r.name, r.ip, r.port, r.login, r.pass, lastInsertID)
-	if err != nil {
-		fmt.Println("Exec error #438 string")
-	}
-
-	affect, err := res.RowsAffected()
-	if err != nil {
-		fmt.Println("RowsAffected error #443 string")
-	}
-
-	fmt.Println(affect, "rows changed")
-
-	fmt.Println("# Querying")
-
-	rows, err := db.Query("SELECT * FROM test")
-	if err != nil {
-		fmt.Println("Query error #452 string")
-	}
-
-	for rows.Next() {
-		var testid int
-		name := r.name
-		ip := r.ip
-		port := r.port
-		login := r.login
-		pass := r.pass
-		err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
-		if err != nil {
-			panic(err) //fmt.Println("Scan error #464 string")
-		}
-		fmt.Println("test_id | name | ip | port | login | pass")
-		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
-
-		//*************************************
-	}
-
-	//DELETING
-	fmt.Println("# Deleting")
-	stmt, err = db.Prepare("delete from test where test_id=$1")
-	if err != nil {
-		fmt.Println("Prepare error #476 string")
-	}
-
-	res, err = stmt.Exec(lastInsertID)
-	if err != nil {
-		fmt.Println("Exec error #481 string")
-	}
-
-	affect, err = res.RowsAffected()
-	if err != nil {
-		fmt.Println("RowsAffected error #486 string")
-	}
-
-	fmt.Println(affect, "rows changed")
-}*/
-
 // printAllConnected : Функция, выводящая все подключенные роутеры
 func printAllConnected(db *sql.DB) {
-	rows, err := db.Query("SELECT * FROM test")
+	rows, err := db.Query("SELECT * FROM routers")
 	if err != nil {
 		fmt.Println("Query error #452 string")
 	}
@@ -628,56 +333,56 @@ func printAllConnected(db *sql.DB) {
 		port := 0
 		login := ""
 		pass := ""
-		err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
+		err = rows.Scan(&routerid, &name, &login, &pass, &ip, &port)
 		if err != nil {
-			panic(err) //fmt.Println("Scan error #464 string")
+			fmt.Println("Scan error #336 string")
 		}
-		fmt.Println("test_id | name | ip | port | login | pass")
-		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
+		fmt.Println("routerid | name | login | pass | ip | port")
+		fmt.Printf("%3v | %8v | %8v | %6v | %8v | %3v\n", routerid, name, login, pass, ip, port)
 
 		//*************************************
 	}
 	defer db.Close()
 }
 
-// deleteRow : Delete row
+/*// deleteRow : Delete row
 func deleteRow(index int, settings string) {
 	fmt.Println("# Deleting")
 
 	db := connectDB(settings)
-	stmt, _ := db.Prepare("delete from test where test_id=$1")
+	stmt, _ := db.Prepare("delete from router where test_id=$1")
 
 	res, _ := stmt.Exec(index)
 
 	affect, _ := res.RowsAffected()
 
 	fmt.Println(affect, "rows changed")
-}
+}*/
 
-// AllConnected : Функция, создающая бэкапы для всех роутеров
+// routerData : Функция, создающая бэкапы для всех роутеров
 func routerData(db *sql.DB, bkp bool, params [2]string) {
 	var r Router
-	rows, err := db.Query("SELECT * FROM test")
+	rows, err := db.Query("SELECT * FROM routers")
 	if err != nil {
-		fmt.Println("Query error #452 string")
+		fmt.Println("Query error #365 string")
 	}
 
 	for rows.Next() {
-		var testid int
+		var routerid int
 		name := ""
 		ip := ""
 		port := 0
 		login := ""
 		pass := ""
-		err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
+		err = rows.Scan(&routerid, &name, &login, &pass, &ip, &port)
 		if err != nil {
 			fmt.Println("Scan error #464 string")
 		}
 
-		fmt.Println("test_id | name | ip | port | login | pass")
-		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
+		fmt.Println("routerid | name | login | pass | ip | port")
+		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %3v\n", routerid, name, login, pass, ip, port)
 
-		r.num = testid
+		r.num = routerid
 		r.name = name
 		r.ip = ip
 		r.port = port
@@ -693,7 +398,7 @@ func routerData(db *sql.DB, bkp bool, params [2]string) {
 
 // sqlRouter : Функция добавляющая хэш и файлы в БД
 func sqlRouter(params [2]string, r Router, bkp bool) {
-	//fmt.Println(bkp)
+
 	if bkp == true {
 		addNewHash(hashMD5Bkp(params[1]), hashSHA1Bkp(params[1]), r.name, bkp, params)
 		addNewFile(params, r, bkp)
@@ -706,26 +411,26 @@ func sqlRouter(params [2]string, r Router, bkp bool) {
 // routerDataNm : Функция, создающая бэкапы по именам роутеров
 func routerDataNm(db *sql.DB, bkp bool, params [2]string, names []string) {
 	var r Router
-	rows, err := db.Query("SELECT * FROM test")
+	rows, err := db.Query("SELECT * FROM routers")
 	if err != nil {
-		fmt.Println("Query error #452 string")
+		fmt.Println("Query error #414 string")
 	}
 
 	for rows.Next() {
-		var testid int
+		var router int
 		name := ""
 		ip := ""
 		port := 0
 		login := ""
 		pass := ""
-		err = rows.Scan(&testid, &name, &ip, &port, &login, &pass)
+		err = rows.Scan(&routerid, &name, &login, &pass, &ip, &port)
 		if err != nil {
-			fmt.Println("Scan error #464 string")
+			fmt.Println("Scan error #426 string")
 		}
-		fmt.Println("test_id | name | ip | port | login | pass")
-		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %6v\n", testid, name, ip, port, login, pass)
+		fmt.Println("routerid | name | login | pass | ip | port")
+		fmt.Printf("%3v | %8v | %6v | %8v | %6v | %3v\n", routerid, name, login, pass, ip, port)
 
-		r.num = testid
+		r.num = routerid
 		r.name = name
 		r.ip = ip
 		r.port = port
@@ -738,9 +443,6 @@ func routerDataNm(db *sql.DB, bkp bool, params [2]string, names []string) {
 				sqlRouter(params, r, bkp)
 			}
 		}
-		sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
-		sqlRouter(params, r, bkp)
-
 	}
 	defer db.Close()
 }
@@ -749,13 +451,13 @@ func routerDataNm(db *sql.DB, bkp bool, params [2]string, names []string) {
 func listRout(name string, params [2]string) {
 	db, err := sql.Open("postgres", params[0])
 	if err != nil {
-		fmt.Println("#745")
+		fmt.Println("#452")
 	}
 
-	cmd := "SELECT * FROM hashs_test WHERE name LIKE '" + name + "'"
+	cmd := "SELECT * FROM hashs WHERE name LIKE '" + name + "'"
 	rows, err := db.Query(cmd)
 	if err != nil {
-		panic(err) // fmt.Println("Query error #751 string")
+		fmt.Println("Query error #458 string")
 	}
 
 	for rows.Next() {
@@ -769,10 +471,10 @@ func listRout(name string, params [2]string) {
 		sha1cfg := ""
 		err = rows.Scan(&hashid, &name, &date, &time, &md5bkp, &sha1bkp, &md5cfg, &sha1cfg)
 		if err != nil {
-			panic(err) // fmt.Println("Scan error #464 string")
+			fmt.Println("Scan error #472 string")
 		}
 
-		fmt.Println("hash_id | name | date | time | MD5 BackUp| SHA-1 BackUp | MD5 config | SHA-1 config")
+		fmt.Println("hashid | name | date | time | MD5 BackUp| SHA-1 BackUp | MD5 config | SHA-1 config")
 		fmt.Printf("%3v | %8v | %8v | %4v | %8v | %8v | %8v | %8v\n", hashid, name, date, time, md5bkp, sha1bkp, md5cfg, sha1cfg)
 	}
 	defer db.Close()
@@ -796,7 +498,6 @@ func hashMD5Bkp(path string) string {
 		log.Fatal(err)
 	}
 
-	//fmt.Printf("BackUp_MD5:%x", backupHash.Sum(nil))
 	return fmt.Sprintf("%x", backupHash.Sum(nil))
 }
 
@@ -815,7 +516,6 @@ func hashMD5Cfg(path string) string {
 		log.Fatal(err)
 	}
 
-	//fmt.Printf("Config_MD5:%x", configHash.Sum(nil))
 	return fmt.Sprintf("%x", configHash.Sum(nil))
 }
 
@@ -834,7 +534,6 @@ func hashSHA1Bkp(path string) string {
 		log.Fatal(err)
 	}
 
-	//fmt.Printf("BackUp_SHA1:% x", backupHash.Sum(nil))
 	return fmt.Sprintf("%x", backupHash.Sum(nil))
 }
 
@@ -853,7 +552,6 @@ func hashSHA1Cfg(path string) string {
 		log.Fatal(err)
 	}
 
-	//fmt.Printf("Config_SHA1:% x", configHash.Sum(nil))
 	return fmt.Sprintf("%x", configHash.Sum(nil))
 }
 
@@ -885,7 +583,6 @@ func getData(path string) [2]string {
 // newConnection : Функция, создающая новое подключение к роутеру -- Изменить! Добавить!
 func newConnection(r Router, name string, hostname string, ip string, login string, port int, pass string, params [2]string) {
 	r.name = name
-	//r.host = hostname
 	r.ip = ip
 	r.login = login
 	r.port = port
@@ -893,13 +590,8 @@ func newConnection(r Router, name string, hostname string, ip string, login stri
 	fmt.Println("----------------------------------------------------------------------------------------------")
 	fmt.Println("\nРоутер\t", r.name, "\t", r.ip, "\t", r.login, "\t", r.pass, "\t", r.port, "\t\tбыл добавлен")
 	fmt.Println("\n----------------------------------------------------------------------------------------------")
-	//SQL-Adding
-	//test(r, params[0])
 
 	addNewRouter(r, params[0])
-	//printAllConnected(connectDB(params[0]))
-	//deleteRow(12, params[0])
-
 }
 
 // routerPrint : Функция-принтер для Router -- Изменить! Добавить!
@@ -937,3 +629,59 @@ func makeConfig(params [2]string, ip string, port int, login string, pass string
 
 //***************************************************************
 //--------------------------GET BACK-----------------------------
+// getBack : Функция, возвращающая бэкап
+func getBack(_name string, _date string, _time string, params [2]string, bkp bool) {
+
+	cmd := "SELECT * FROM backups WHERE name LIKE '" + _name + "'"
+	db := connectDB(params[0])
+	rows, err := db.Query(cmd)
+	if err != nil {
+		fmt.Println("Query error #635 string")
+	}
+
+	for rows.Next() {
+
+		var backupid int
+		var time string
+		var bkpfile []byte
+		var cfgfile []byte
+		var name string
+		var date string
+		err = rows.Scan(&backupid, &name, &date, &time, &bkpfile, &cfgfile)
+		if err != nil {
+			fmt.Println("Scan error #650 string")
+		}
+		fmt.Println("backupid | name | date | time | bkp | cfg")
+		fmt.Printf("%3v | %8v | %6v | %3v | %1v | %1v\n", backupid, name, date, time, bkpfile, cfgfile)
+		if _date == date {
+			if _time == time {
+				if bkp == true {
+					convertToFile(bkpfile, bkp)
+				} else {
+					convertToFile(cfgfile, bkp)
+				}
+			}
+		}
+
+	}
+	defer db.Close()
+
+}
+
+// convertToFile : Функция, конвертуирющая byteA to *File
+func convertToFile(bytes []byte, bkp bool) {
+	permissions := os.FileMode(0644)
+	if bkp == true {
+		bytes := []byte("to be written to a file\n")
+		bkperr := ioutil.WriteFile("./Export/sourceBackUp.backup", bytes, permissions)
+		if bkperr != nil {
+			fmt.Println("Не удалось конвертировать обратно в файл")
+		}
+	} else {
+		bytes := []byte("to be written to a file\n")
+		cfgerr := ioutil.WriteFile("./Export/sourceconfig.rsc", bytes, permissions)
+		if cfgerr != nil {
+			fmt.Println("Не удалось конвертировать обратно в файл")
+		}
+	}
+}
