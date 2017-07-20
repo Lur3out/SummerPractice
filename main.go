@@ -517,7 +517,7 @@ func ifExist(_name string, md5 string, sha1 string, params [2]string, bkp bool) 
 	}
 
 	for rows.Next() {
-		var routerid int
+		var hashid int
 		name := ""
 		date := ""
 		time := ""
