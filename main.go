@@ -390,8 +390,19 @@ func routerData(db *sql.DB, bkp bool, params [2]string) {
 		r.pass = pass
 
 		sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
-		sqlRouter(params, r, bkp)
-
+		if bkp == true {
+			if ifExist(name, hashMD5Bkp(params[1]), hashSHA1Bkp(params[1]), params, bkp) == false {
+				sqlRouter(params, r, bkp)
+			} else {
+				fmt.Println("Такой backup уже существует!")
+			}
+		} else {
+			if ifExist(name, hashMD5Cfg(params[1]), hashSHA1Cfg(params[1]), params, bkp) == false {
+				sqlRouter(params, r, bkp)
+			} else {
+				fmt.Println("Такой config уже существует!")
+			}
+		}
 	}
 	defer db.Close()
 }
@@ -440,7 +451,19 @@ func routerDataNm(db *sql.DB, bkp bool, params [2]string, names []string) {
 		for i := 0; i < len(names); i++ {
 			if names[i] == name {
 				sftpRouter(sshRouter(r.login, r.pass, r.ip, r.port), bkp, params[1])
-				sqlRouter(params, r, bkp)
+				if bkp == true {
+					if ifExist(name, hashMD5Bkp(params[1]), hashSHA1Bkp(params[1]), params, bkp) == false {
+						sqlRouter(params, r, bkp)
+					} else {
+						fmt.Println("Такой backup уже существует!")
+					}
+				} else {
+					if ifExist(name, hashMD5Cfg(params[1]), hashSHA1Cfg(params[1]), params, bkp) == false {
+						sqlRouter(params, r, bkp)
+					} else {
+						fmt.Println("Такой config уже существует!")
+					}
+				}
 			}
 		}
 	}
@@ -478,6 +501,50 @@ func listRout(name string, params [2]string) {
 		fmt.Printf("%3v | %8v | %8v | %4v | %8v | %8v | %8v | %8v\n", hashid, name, date, time, md5bkp, sha1bkp, md5cfg, sha1cfg)
 	}
 	defer db.Close()
+}
+
+// ifExist : Функция, которая проверяет есть ли такой бэкап в БД
+func ifExist(_name string, md5 string, sha1 string, params [2]string, bkp bool) bool {
+
+	db, err := sql.Open("postgres", params[0])
+	if err != nil {
+		fmt.Println("#486 Db Open")
+	}
+	cmd := "SELECT * FROM hashs WHERE name LIKE '" + _name + "'"
+	rows, err := db.Query(cmd)
+	if err != nil {
+		fmt.Println("#490 query")
+	}
+
+	for rows.Next() {
+		var routerid int
+		name := ""
+		date := ""
+		time := ""
+		md5bkp := ""
+		sha1bkp := ""
+		md5cfg := ""
+		sha1cfg := ""
+		err = rows.Scan(&hashid, &name, &date, &time, &md5bkp, &sha1bkp, &md5cfg, &sha1cfg)
+		if err != nil {
+			fmt.Println("Scan error #505 string")
+		}
+
+		// fmt.Println("hashid | name | login | pass | ip | port")
+		// fmt.Printf("%3v | %8v | %6v | %8v | %6v | %3v\n", routerid, name, login, pass, ip, port)
+
+		if bkp == true {
+			if md5 != md5bkp && sha1 != sha1bkp {
+				return false
+			}
+		} else {
+			if md5 != md5cfg && sha1 != sha1cfg {
+				return false
+			}
+		}
+	}
+	defer db.Close()
+	return true
 }
 
 //**************************************************************
